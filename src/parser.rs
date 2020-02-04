@@ -278,13 +278,9 @@ impl Attribute {
     fn parse((line, data): (usize, &[u8])) -> Result<Attribute, ParserError> {
         // <attribute>:<value>
         // <attribute>
-        let mut attribute = data.split_str(b":");
+        let mut attribute = data.splitn_str(2, b":");
         let name = parse_str(&mut attribute, line, "Attribute name")?;
         let value = parse_str_opt(&mut attribute, line, "Attribute value")?;
-
-        if attribute.next().is_some() {
-            return Err(ParserError::FieldTrailingData(line, "Attribute"));
-        }
 
         Ok(Attribute {
             attribute: name,
@@ -297,7 +293,7 @@ impl Key {
     fn parse((line, data): (usize, &[u8])) -> Result<Key, ParserError> {
         // <method>:<encryption key>
         // <method>
-        let mut key = data.split_str(b":");
+        let mut key = data.splitn_str(2, b":");
         let method = parse_str(&mut key, line, "Key method")?;
         let encryption_key = parse_str_opt(&mut key, line, "Key encryption-key")?;
 
@@ -793,6 +789,7 @@ a=recvonly\r
 m=audio 49170 RTP/AVP 0\r
 m=video 51372/2 RTP/AVP 99\r
 a=rtpmap:99 h263-1998/90000\r
+a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA\r
 ";
         let parsed = Session::parse(&sdp[..]).unwrap();
         let expected = Session {
@@ -868,10 +865,16 @@ a=rtpmap:99 h263-1998/90000\r
                     connections: vec![],
                     bandwidths: vec![],
                     key: None,
-                    attributes: vec![Attribute {
-                        attribute: "rtpmap".into(),
-                        value: Some("99 h263-1998/90000".into()),
-                    }],
+                    attributes: vec![
+                        Attribute {
+                            attribute: "rtpmap".into(),
+                            value: Some("99 h263-1998/90000".into()),
+                        },
+                        Attribute {
+                            attribute: "fingerprint".into(),
+                            value: Some("sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA".into()),
+                        }
+                    ],
                 },
             ],
         };

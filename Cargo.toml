@@ -11,5 +11,5 @@ description = "SDP (RFC 4566) types, parser and serializer"
 readme = "README.md"
 
 [dependencies]
-bstr = "0.2"
+bstr = "0.2.11"
 fallible-iterator = "0.2"

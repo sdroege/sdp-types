@@ -324,6 +324,7 @@ a=recvonly\r
 m=audio 49170 RTP/AVP 0\r
 m=video 51372/2 RTP/AVP 99\r
 a=rtpmap:99 h263-1998/90000\r
+a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA\r
 ";
         let parsed = Session::parse(sdp.as_bytes()).unwrap();
         let mut written = vec![];
