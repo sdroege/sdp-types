@@ -297,10 +297,6 @@ impl Key {
         let method = parse_str(&mut key, line, "Key method")?;
         let encryption_key = parse_str_opt(&mut key, line, "Key encryption-key")?;
 
-        if key.next().is_some() {
-            return Err(ParserError::FieldTrailingData(line, "Key"));
-        }
-
         Ok(Key {
             method,
             encryption_key,
