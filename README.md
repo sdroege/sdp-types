@@ -1,4 +1,4 @@
-# sdp-types [![crates.io](https://img.shields.io/crates/v/sdp-types.svg)](https://crates.io/crates/sdp-types) [![Build Status](https://travis-ci.org/sdroege/sdp-types.svg?branch=master)](https://travis-ci.org/sdroege/sdp-types) [![docs.rs](https://docs.rs/sdp-types/badge.svg)](https://docs.rs/sdp-types)
+# sdp-types [![crates.io](https://img.shields.io/crates/v/sdp-types.svg)](https://crates.io/crates/sdp-types) [![Actions Status](https://github.com/sdroege/sdp-types/workflows/sdp-types/badge.svg)](https://github.com/sdroege/sdp-types/actions) [![docs.rs](https://docs.rs/sdp-types/badge.svg)](https://docs.rs/sdp-types)
 
 Crate for handling SDP ([RFC 4566](https://tools.ietf.org/html/rfc4566))
 session descriptions, including a parser and serializer.
