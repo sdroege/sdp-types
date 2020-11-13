@@ -242,7 +242,7 @@ impl Media {
             .iter()
             .find(|a| a.attribute == name)
             .ok_or_else(|| AttributeNotFoundError)
-            .map(|a| a.value.as_ref().map(String::as_str))
+            .map(|a| a.value.as_deref())
     }
 
     /// Gets an iterator over all attribute values of the given name, if existing.
@@ -254,7 +254,7 @@ impl Media {
             .attributes
             .iter()
             .filter(move |a| a.attribute == name)
-            .map(|a| a.value.as_ref().map(String::as_str))
+            .map(|a| a.value.as_deref())
             .peekable();
         if iter.peek().is_some() {
             Ok(iter)
@@ -279,7 +279,7 @@ impl Session {
             .iter()
             .find(|a| a.attribute == name)
             .ok_or_else(|| AttributeNotFoundError)
-            .map(|a| a.value.as_ref().map(String::as_str))
+            .map(|a| a.value.as_deref())
     }
 
     /// Gets an iterator over all attribute values of the given name, if existing.
@@ -291,7 +291,7 @@ impl Session {
             .attributes
             .iter()
             .filter(move |a| a.attribute == name)
-            .map(|a| a.value.as_ref().map(String::as_str))
+            .map(|a| a.value.as_deref())
             .peekable();
         if iter.peek().is_some() {
             Ok(iter)
@@ -379,10 +379,7 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
                 .get_attribute_values("rtpmap")
                 .unwrap()
                 .collect::<Vec<_>>(),
-            &[
-                Some("99 h263-1998/90000".into()),
-                Some("100 h264/90000".into())
-            ]
+            &[Some("99 h263-1998/90000"), Some("100 h264/90000")]
         );
         assert_eq!(
             media
@@ -455,10 +452,7 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
                 .get_attribute_values("rtpmap")
                 .unwrap()
                 .collect::<Vec<_>>(),
-            &[
-                Some("99 h263-1998/90000".into()),
-                Some("100 h264/90000".into())
-            ]
+            &[Some("99 h263-1998/90000"), Some("100 h264/90000")]
         );
         assert_eq!(
             session
