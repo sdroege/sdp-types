@@ -329,7 +329,7 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
         let parsed = Session::parse(sdp.as_bytes()).unwrap();
         let mut written = vec![];
         parsed.write(&mut written).unwrap();
-        assert_eq!(String::from_utf8_lossy(&written), &sdp[..]);
+        assert_eq!(String::from_utf8_lossy(&written), sdp);
     }
 
     #[test]

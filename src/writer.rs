@@ -351,6 +351,6 @@ m=video 51372/2 RTP/AVP 99\r
 a=rtpmap:99 h263-1998/90000\r
 ";
 
-        assert_eq!(String::from_utf8_lossy(&written), &expected[..]);
+        assert_eq!(String::from_utf8_lossy(&written), expected);
     }
 }
