@@ -715,7 +715,11 @@ impl<'iter, 'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator
     type Error = ParserError;
 
     fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
-        if let Some((n, line)) = self.it.peek() {
+        while let Some((n, line)) = self.it.peek() {
+            if line.is_empty() {
+                self.it.next();
+                continue;
+            }
             let mut key_value = line.splitn(2, |b| *b == b'=');
             let key = key_value
                 .next()
@@ -733,16 +737,15 @@ impl<'iter, 'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator
                     ParserError::InvalidLineFormat(*n, "Line not in key=value format")
                 })??;
 
-            if key == self.current {
+            return if key == self.current {
                 Ok(self.it.next().map(|(n, line)| (n, &line[2..])))
             } else if self.expected_next.contains(&key) {
                 Ok(None)
             } else {
                 Err(ParserError::UnexpectedLine(*n, key))
-            }
-        } else {
-            Ok(None)
+            };
         }
+        Ok(None)
     }
 }
 
@@ -876,5 +879,27 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
         };
 
         assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn parse_sdp_real_camera() {
+        let sdp = b"v=0\r
+o=VSTC 3828747520 3828747520 IN IP4 192.168.1.165\r
+s=streamed by the VSTARCAM RTSP server\r
+e=NONE\r
+c=IN IP4 0.0.0.0\r
+t=0 0\r
+m=video 0 RTP/AVP 96\r
+b=AS:1024\r
+a=control:track0\r
+a=rtpmap:96 H264/90000\r
+a=fmtp:96 packetization-mode=1;profile-level-id=4d001f;sprop-parameter-sets=Z00AH52oFAFum4CAgKAAAAMAIAAAAwHwgA==,aO48gA==\r
+m=audio 0 RTP/AVP 8	 \r
+b=AS:64\r
+a=control:track1\r
+a=rtpmap:8 PCMA/8000/1\r
+
+";
+        let _parsed = Session::parse(&sdp[..]).unwrap();
     }
 }
