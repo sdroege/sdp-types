@@ -186,7 +186,7 @@ impl Time {
 fn parse_typed_time(s: &[u8], line: usize, field: &'static str) -> Result<u64, ParserError> {
     let (num, factor) = match s
         .split_last()
-        .ok_or_else(|| ParserError::InvalidFieldFormat(line, field))?
+        .ok_or(ParserError::InvalidFieldFormat(line, field))?
     {
         (b'd', prefix) => (prefix, 86_400),
         (b'h', prefix) => (prefix, 3_600),
@@ -209,11 +209,11 @@ impl Repeat {
         let mut repeat = data.split_str(b" ");
         let repeat_interval = repeat
             .next()
-            .ok_or_else(|| ParserError::MissingField(line, "Repeat repeat-interval"))
+            .ok_or(ParserError::MissingField(line, "Repeat repeat-interval"))
             .and_then(|s| parse_typed_time(s, line, "Repeat repeat-interval"))?;
         let active_duration = repeat
             .next()
-            .ok_or_else(|| ParserError::MissingField(line, "Repeat active-duration"))
+            .ok_or(ParserError::MissingField(line, "Repeat active-duration"))
             .and_then(|s| parse_typed_time(s, line, "Repeat active-duration"))?;
 
         let offsets = repeat
@@ -245,7 +245,7 @@ impl TimeZone {
 
             let offset = zones
                 .next()
-                .ok_or_else(|| ParserError::MissingField(line, "TimeZone offset"))
+                .ok_or(ParserError::MissingField(line, "TimeZone offset"))
                 .and_then(|s| {
                     use std::convert::TryInto;
 
@@ -312,13 +312,13 @@ impl Media {
 
         let (port, num_ports) = media
             .next()
-            .ok_or_else(|| ParserError::MissingField(line, "Media port"))
+            .ok_or(ParserError::MissingField(line, "Media port"))
             .and_then(|s| str_from_utf8((line, s), "Media Port"))
             .and_then(|port| {
                 let mut split = port.splitn(2, '/');
                 let port = split
                     .next()
-                    .ok_or_else(|| ParserError::MissingField(line, "Media port"))
+                    .ok_or(ParserError::MissingField(line, "Media port"))
                     .and_then(|port| {
                         port.parse()
                             .map_err(|_| ParserError::InvalidFieldFormat(line, "Media port"))
@@ -326,7 +326,7 @@ impl Media {
 
                 let num_ports = split
                     .next()
-                    .ok_or_else(|| ParserError::MissingField(line, "Media num-ports"))
+                    .ok_or(ParserError::MissingField(line, "Media num-ports"))
                     .and_then(|num_ports| {
                         num_ports
                             .parse()
@@ -445,7 +445,7 @@ impl Session {
                 }
             },
         )?
-        .ok_or_else(|| ParserError::NoVersion)?;
+        .ok_or(ParserError::NoVersion)?;
 
         // Parse origin line:
         // - Must only exist exactly once
@@ -457,7 +457,7 @@ impl Session {
             ParserError::MultipleOrigins,
             Origin::parse,
         )?
-        .ok_or_else(|| ParserError::NoOrigin)?;
+        .ok_or(ParserError::NoOrigin)?;
 
         // Parse session name line:
         // - Must only exist exactly once
@@ -469,7 +469,7 @@ impl Session {
             ParserError::MultipleSessionNames,
             |v| str_from_utf8(v, "Session Name"),
         )?
-        .ok_or_else(|| ParserError::NoSessionName)?;
+        .ok_or(ParserError::NoSessionName)?;
 
         // Parse session information line:
         // - Must only exist once or not at all
@@ -611,7 +611,7 @@ fn parse_str<'a>(
     field: &'static str,
 ) -> Result<String, ParserError> {
     it.next()
-        .ok_or_else(|| ParserError::MissingField(line, field))
+        .ok_or(ParserError::MissingField(line, field))
         .and_then(|b| {
             std::str::from_utf8(b)
                 .map(String::from)
@@ -625,7 +625,7 @@ fn parse_str_u64<'a>(
     field: &'static str,
 ) -> Result<u64, ParserError> {
     it.next()
-        .ok_or_else(|| ParserError::MissingField(line, field))
+        .ok_or(ParserError::MissingField(line, field))
         .and_then(|b| {
             std::str::from_utf8(b).map_err(|_| ParserError::InvalidFieldEncoding(line, field))
         })
@@ -729,9 +729,10 @@ impl<'iter, 'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator
                         ))
                     }
                 })
-                .ok_or_else(|| {
-                    ParserError::InvalidLineFormat(*n, "Line not in key=value format")
-                })??;
+                .ok_or(ParserError::InvalidLineFormat(
+                    *n,
+                    "Line not in key=value format",
+                ))??;
 
             if key == self.current {
                 Ok(self.it.next().map(|(n, line)| (n, &line[2..])))
