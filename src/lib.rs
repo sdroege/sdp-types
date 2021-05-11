@@ -241,7 +241,7 @@ impl Media {
         self.attributes
             .iter()
             .find(|a| a.attribute == name)
-            .ok_or_else(|| AttributeNotFoundError)
+            .ok_or(AttributeNotFoundError)
             .map(|a| a.value.as_deref())
     }
 
@@ -278,7 +278,7 @@ impl Session {
         self.attributes
             .iter()
             .find(|a| a.attribute == name)
-            .ok_or_else(|| AttributeNotFoundError)
+            .ok_or(AttributeNotFoundError)
             .map(|a| a.value.as_deref())
     }
 
