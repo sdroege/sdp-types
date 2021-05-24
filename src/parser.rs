@@ -200,7 +200,8 @@ fn parse_typed_time(s: &[u8], line: usize, field: &'static str) -> Result<u64, P
     let num = num
         .parse::<u64>()
         .map_err(|_| ParserError::InvalidFieldFormat(line, field))?;
-    Ok(factor * num)
+    num.checked_mul(factor)
+        .ok_or(ParserError::InvalidFieldFormat(line, field))
 }
 
 impl Repeat {
@@ -906,5 +907,13 @@ a=rtpmap:8 PCMA/8000/1\r
 
 ";
         let _parsed = Session::parse(&sdp[..]).unwrap();
+    }
+
+    #[test]
+    fn parse_overflowing_time() {
+        assert_eq!(
+            Session::parse(b"v=0\no=  0  =\x00 \ns=q\nt=0 5\nz=00 666666000079866660m "),
+            Err(ParserError::InvalidFieldFormat(4, "TimeZone offset"))
+        );
     }
 }
