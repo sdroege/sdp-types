@@ -720,23 +720,22 @@ impl<'iter, 'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator
                 self.it.next();
                 continue;
             }
-            let mut key_value = line.splitn(2, |b| *b == b'=');
-            let key = key_value
-                .next()
-                .map(|key| {
-                    if key.len() == 1 {
-                        Ok(key[0])
-                    } else {
-                        Err(ParserError::InvalidLineFormat(
-                            *n,
-                            "Line key longer than 1 character",
-                        ))
-                    }
-                })
-                .ok_or(ParserError::InvalidLineFormat(
-                    *n,
-                    "Line not in key=value format",
-                ))??;
+            let equals = line.iter().position(|b| *b == b'=');
+            let key = match equals {
+                None => {
+                    return Err(ParserError::InvalidLineFormat(
+                        *n,
+                        "Line not in key=value format",
+                    ))
+                }
+                Some(i) if i == 1 => line[0],
+                _ => {
+                    return Err(ParserError::InvalidLineFormat(
+                        *n,
+                        "Line key not 1 character",
+                    ))
+                }
+            };
 
             return if key == self.current {
                 Ok(self.it.next().map(|(n, line)| (n, &line[2..])))
@@ -880,6 +879,11 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
         };
 
         assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn parse_only_key() {
+        Session::parse(b"v\n").unwrap_err();
     }
 
     #[test]
