@@ -107,15 +107,15 @@ impl std::fmt::Display for ParserError {
 }
 
 impl Origin {
-    fn parse((line, data): (usize, &[u8])) -> Result<Origin, ParserError> {
+    fn parse(line: &Line) -> Result<Origin, ParserError> {
         // <username> <sess-id> <sess-version> <nettype> <addrtype> <unicast-address>
-        let mut origin = data.splitn_str(6, b" ");
-        let username = parse_str(&mut origin, line, "Origin username")?;
-        let sess_id = parse_str(&mut origin, line, "Origin sess-id")?;
-        let sess_version = parse_str_u64(&mut origin, line, "Origin sess-version")?;
-        let nettype = parse_str(&mut origin, line, "Origin nettype")?;
-        let addrtype = parse_str(&mut origin, line, "Origin addrtype")?;
-        let unicast_address = parse_str(&mut origin, line, "Origin unicast-address")?;
+        let mut origin = line.value.splitn_str(6, b" ");
+        let username = parse_str(&mut origin, line.n, "Origin username")?;
+        let sess_id = parse_str(&mut origin, line.n, "Origin sess-id")?;
+        let sess_version = parse_str_u64(&mut origin, line.n, "Origin sess-version")?;
+        let nettype = parse_str(&mut origin, line.n, "Origin nettype")?;
+        let addrtype = parse_str(&mut origin, line.n, "Origin addrtype")?;
+        let unicast_address = parse_str(&mut origin, line.n, "Origin unicast-address")?;
 
         Ok(Origin {
             username: if username == "-" {
@@ -133,12 +133,13 @@ impl Origin {
 }
 
 impl Connection {
-    fn parse((line, data): (usize, &[u8])) -> Result<Connection, ParserError> {
+    fn parse(line: &Line) -> Result<Connection, ParserError> {
         // <nettype> <addrtype> <connection-address>
-        let mut connection = data.splitn_str(3, b" ");
-        let nettype = parse_str(&mut connection, line, "Connection nettype")?;
-        let addrtype = parse_str(&mut connection, line, "Connection addrtype")?;
-        let connection_address = parse_str(&mut connection, line, "Connection connection-address")?;
+        let mut connection = line.value.splitn_str(3, b" ");
+        let nettype = parse_str(&mut connection, line.n, "Connection nettype")?;
+        let addrtype = parse_str(&mut connection, line.n, "Connection addrtype")?;
+        let connection_address =
+            parse_str(&mut connection, line.n, "Connection connection-address")?;
 
         Ok(Connection {
             nettype,
@@ -149,13 +150,13 @@ impl Connection {
 }
 
 impl Bandwidth {
-    fn parse((line, data): (usize, &[u8])) -> Result<Bandwidth, ParserError> {
+    fn parse(line: &Line) -> Result<Bandwidth, ParserError> {
         // <bwtype>:<bandwidth>
-        let mut bandwidth = data.split_str(b":");
-        let bwtype = parse_str(&mut bandwidth, line, "Bandwidth bwtype")?;
-        let bw = parse_str_u64(&mut bandwidth, line, "Bandwidth bandwidth")?;
+        let mut bandwidth = line.value.split_str(b":");
+        let bwtype = parse_str(&mut bandwidth, line.n, "Bandwidth bwtype")?;
+        let bw = parse_str_u64(&mut bandwidth, line.n, "Bandwidth bandwidth")?;
         if bandwidth.next().is_some() {
-            return Err(ParserError::FieldTrailingData(line, "Bandwidth"));
+            return Err(ParserError::FieldTrailingData(line.n, "Bandwidth"));
         }
 
         Ok(Bandwidth {
@@ -166,13 +167,13 @@ impl Bandwidth {
 }
 
 impl Time {
-    fn parse((line, data): (usize, &[u8])) -> Result<Time, ParserError> {
+    fn parse(line: &Line) -> Result<Time, ParserError> {
         // <start-time> <stop-time>
-        let mut time = data.split_str(b" ");
-        let start_time = parse_str_u64(&mut time, line, "Time start-time")?;
-        let stop_time = parse_str_u64(&mut time, line, "Time stop-time")?;
+        let mut time = line.value.split_str(b" ");
+        let start_time = parse_str_u64(&mut time, line.n, "Time start-time")?;
+        let stop_time = parse_str_u64(&mut time, line.n, "Time stop-time")?;
         if time.next().is_some() {
-            return Err(ParserError::FieldTrailingData(line, "Time"));
+            return Err(ParserError::FieldTrailingData(line.n, "Time"));
         }
 
         Ok(Time {
@@ -205,20 +206,20 @@ fn parse_typed_time(s: &[u8], line: usize, field: &'static str) -> Result<u64, P
 }
 
 impl Repeat {
-    fn parse((line, data): (usize, &[u8])) -> Result<Repeat, ParserError> {
+    fn parse(line: &Line) -> Result<Repeat, ParserError> {
         // <repeat interval> <active duration> <offsets from start-time>
-        let mut repeat = data.split_str(b" ");
+        let mut repeat = line.value.split_str(b" ");
         let repeat_interval = repeat
             .next()
-            .ok_or(ParserError::MissingField(line, "Repeat repeat-interval"))
-            .and_then(|s| parse_typed_time(s, line, "Repeat repeat-interval"))?;
+            .ok_or(ParserError::MissingField(line.n, "Repeat repeat-interval"))
+            .and_then(|s| parse_typed_time(s, line.n, "Repeat repeat-interval"))?;
         let active_duration = repeat
             .next()
-            .ok_or(ParserError::MissingField(line, "Repeat active-duration"))
-            .and_then(|s| parse_typed_time(s, line, "Repeat active-duration"))?;
+            .ok_or(ParserError::MissingField(line.n, "Repeat active-duration"))
+            .and_then(|s| parse_typed_time(s, line.n, "Repeat active-duration"))?;
 
         let offsets = repeat
-            .map(|s| parse_typed_time(s, line, "Repeat active-duration"))
+            .map(|s| parse_typed_time(s, line.n, "Repeat active-duration"))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Repeat {
@@ -230,13 +231,13 @@ impl Repeat {
 }
 
 impl TimeZone {
-    fn parse((line, data): (usize, &[u8])) -> Result<Vec<TimeZone>, ParserError> {
+    fn parse(line: &Line) -> Result<Vec<TimeZone>, ParserError> {
         // <adjustment time> <offset> <adjustment time> <offset> ....
-        let mut zones = data.split_str(b" ");
+        let mut zones = line.value.split_str(b" ");
 
         let mut ret = Vec::new();
         loop {
-            let adjustment_time = parse_str_u64(&mut zones, line, "TimeZone adjustment-time");
+            let adjustment_time = parse_str_u64(&mut zones, line.n, "TimeZone adjustment-time");
 
             let adjustment_time = match adjustment_time {
                 Ok(adjustment_time) => adjustment_time,
@@ -246,7 +247,7 @@ impl TimeZone {
 
             let offset = zones
                 .next()
-                .ok_or(ParserError::MissingField(line, "TimeZone offset"))
+                .ok_or(ParserError::MissingField(line.n, "TimeZone offset"))
                 .and_then(|s| {
                     use std::convert::TryInto;
 
@@ -256,10 +257,10 @@ impl TimeZone {
                         (false, s)
                     };
 
-                    parse_typed_time(s, line, "TimeZone offset")
+                    parse_typed_time(s, line.n, "TimeZone offset")
                         .and_then(|t| {
                             t.try_into().map_err(|_| {
-                                ParserError::InvalidFieldFormat(line, "TimeZone offset")
+                                ParserError::InvalidFieldFormat(line.n, "TimeZone offset")
                             })
                         })
                         .map(|t: i64| if sign { -t } else { t })
@@ -276,12 +277,12 @@ impl TimeZone {
 }
 
 impl Attribute {
-    fn parse((line, data): (usize, &[u8])) -> Result<Attribute, ParserError> {
+    fn parse(line: &Line) -> Result<Attribute, ParserError> {
         // <attribute>:<value>
         // <attribute>
-        let mut attribute = data.splitn_str(2, b":");
-        let name = parse_str(&mut attribute, line, "Attribute name")?;
-        let value = parse_str_opt(&mut attribute, line, "Attribute value")?;
+        let mut attribute = line.value.splitn_str(2, b":");
+        let name = parse_str(&mut attribute, line.n, "Attribute name")?;
+        let value = parse_str_opt(&mut attribute, line.n, "Attribute value")?;
 
         Ok(Attribute {
             attribute: name,
@@ -291,12 +292,12 @@ impl Attribute {
 }
 
 impl Key {
-    fn parse((line, data): (usize, &[u8])) -> Result<Key, ParserError> {
+    fn parse(line: &Line) -> Result<Key, ParserError> {
         // <method>:<encryption key>
         // <method>
-        let mut key = data.splitn_str(2, b":");
-        let method = parse_str(&mut key, line, "Key method")?;
-        let encryption_key = parse_str_opt(&mut key, line, "Key encryption-key")?;
+        let mut key = line.value.splitn_str(2, b":");
+        let method = parse_str(&mut key, line.n, "Key method")?;
+        let encryption_key = parse_str_opt(&mut key, line.n, "Key encryption-key")?;
 
         Ok(Key {
             method,
@@ -306,32 +307,32 @@ impl Key {
 }
 
 impl Media {
-    fn parse_m_line((line, data): (usize, &[u8])) -> Result<Media, ParserError> {
+    fn parse_m_line(line: &Line) -> Result<Media, ParserError> {
         // <media> <port> <proto> <fmt> ...
-        let mut media = data.splitn_str(4, b" ");
-        let name = parse_str(&mut media, line, "Media name")?;
+        let mut media = line.value.splitn_str(4, b" ");
+        let name = parse_str(&mut media, line.n, "Media name")?;
 
         let (port, num_ports) = media
             .next()
-            .ok_or(ParserError::MissingField(line, "Media port"))
-            .and_then(|s| str_from_utf8((line, s), "Media Port"))
+            .ok_or(ParserError::MissingField(line.n, "Media port"))
+            .and_then(|s| str_from_utf8(line.n, s, "Media Port"))
             .and_then(|port| {
                 let mut split = port.splitn(2, '/');
                 let port = split
                     .next()
-                    .ok_or(ParserError::MissingField(line, "Media port"))
+                    .ok_or(ParserError::MissingField(line.n, "Media port"))
                     .and_then(|port| {
                         port.parse()
-                            .map_err(|_| ParserError::InvalidFieldFormat(line, "Media port"))
+                            .map_err(|_| ParserError::InvalidFieldFormat(line.n, "Media port"))
                     })?;
 
                 let num_ports = split
                     .next()
-                    .ok_or(ParserError::MissingField(line, "Media num-ports"))
+                    .ok_or(ParserError::MissingField(line.n, "Media num-ports"))
                     .and_then(|num_ports| {
                         num_ports
                             .parse()
-                            .map_err(|_| ParserError::InvalidFieldFormat(line, "Media num-ports"))
+                            .map_err(|_| ParserError::InvalidFieldFormat(line.n, "Media num-ports"))
                     });
 
                 match num_ports {
@@ -341,8 +342,8 @@ impl Media {
                 }
             })?;
 
-        let proto = parse_str(&mut media, line, "Media proto")?;
-        let fmt = parse_str(&mut media, line, "Media fmt")?;
+        let proto = parse_str(&mut media, line.n, "Media proto")?;
+        let fmt = parse_str(&mut media, line.n, "Media fmt")?;
 
         Ok(Media {
             media: name,
@@ -363,7 +364,7 @@ impl Media {
     ) -> Result<Option<Media>, ParserError> {
         let media = match lines.next()? {
             None => return Ok(None),
-            Some(line) if line.key == b'm' => Media::parse_m_line((line.n, line.value))?,
+            Some(line) if line.key == b'm' => Media::parse_m_line(&line)?,
             Some(line) => return Err(ParserError::UnexpectedLine(line.n, line.key)),
         };
 
@@ -383,16 +384,16 @@ impl Media {
                     &mut media_title,
                     &line,
                     ParserError::MultipleMediaTitles,
-                    |v| str_from_utf8(v, "Media Title"),
+                    |l| str_from_utf8(l.n, l.value, "Media Title"),
                 )?,
 
                 // Parse connection lines
                 // - Can exist not at all, once or multiple times
-                b'c' => connections.push(Connection::parse((line.n, line.value))?),
+                b'c' => connections.push(Connection::parse(&line)?),
 
                 // Parse bandwidth lines:
                 // - Can exist not at all, once or multiple times
-                b'b' => bandwidths.push(Bandwidth::parse((line.n, line.value))?),
+                b'b' => bandwidths.push(Bandwidth::parse(&line)?),
 
                 // Parse key line
                 // - Can exist not at all or exactly once
@@ -405,7 +406,7 @@ impl Media {
 
                 // Parse attribute lines:
                 // - Can exist not at all, once or multiple times
-                b'a' => attributes.push(Attribute::parse((line.n, line.value))?),
+                b'a' => attributes.push(Attribute::parse(&line)?),
 
                 o => return Err(ParserError::UnexpectedLine(line.n, o)),
             }
@@ -481,7 +482,7 @@ impl Session {
                     &mut session_name,
                     &line,
                     ParserError::MultipleSessionNames,
-                    |l| str_from_utf8(l, "Session Name"),
+                    |l| str_from_utf8(l.n, l.value, "Session Name"),
                 )?,
 
                 // Parse session information line:
@@ -490,24 +491,24 @@ impl Session {
                     &mut session_description,
                     &line,
                     ParserError::MultipleSessionDescription,
-                    |l| str_from_utf8(l, "Session Description"),
+                    |l| str_from_utf8(l.n, l.value, "Session Description"),
                 )?,
 
                 // Parse URI line:
                 // - Must only exist once or not at all
                 b'u' => {
                     parse_rejecting_duplicates(&mut uri, &line, ParserError::MultipleUris, |l| {
-                        str_from_utf8(l, "Uri")
+                        str_from_utf8(l.n, l.value, "Uri")
                     })?
                 }
 
                 // Parse E-Mail lines:
                 // - Can exist not at all, once or multiple times
-                b'e' => emails.push(str_from_utf8((line.n, line.value), "E-Mail")?),
+                b'e' => emails.push(str_from_utf8(line.n, line.value, "E-Mail")?),
 
                 // Parse phone number lines:
                 // - Can exist not at all, once or multiple times
-                b'p' => phones.push(str_from_utf8((line.n, line.value), "Phone")?),
+                b'p' => phones.push(str_from_utf8(line.n, line.value, "Phone")?),
 
                 // Parse connection line:
                 // - Can exist not at all or exactly once per session
@@ -520,11 +521,11 @@ impl Session {
 
                 // Parse bandwidth lines:
                 // - Can exist not at all, once or multiple times
-                b'b' => bandwidths.push(Bandwidth::parse((line.n, line.value))?),
+                b'b' => bandwidths.push(Bandwidth::parse(&line)?),
 
                 // Parse time lines
                 // - If followed by "r" lines then these are part of the same time field
-                b't' => times.push(Time::parse((line.n, line.value))?),
+                b't' => times.push(Time::parse(&line)?),
 
                 // Parse repeat lines
                 // - Can exist not at all, once or multiple times
@@ -532,7 +533,7 @@ impl Session {
                     let t = times
                         .last_mut()
                         .ok_or(ParserError::UnexpectedLine(line.n, b't'))?;
-                    t.repeats.push(Repeat::parse((line.n, line.value))?);
+                    t.repeats.push(Repeat::parse(&line)?);
                 }
 
                 // Parse zones line:
@@ -555,7 +556,7 @@ impl Session {
 
                 // Parse attribute lines:
                 // - Can exist not at all, once or multiple times
-                b'a' => attributes.push(Attribute::parse((line.n, line.value))?),
+                b'a' => attributes.push(Attribute::parse(&line)?),
 
                 o => return Err(ParserError::UnexpectedLine(line.n, o)),
             }
@@ -594,17 +595,17 @@ impl Session {
 fn parse_rejecting_duplicates<
     T,
     E: Fn(usize) -> ParserError,
-    P: Fn((usize, &[u8])) -> Result<T, ParserError>,
+    P: Fn(&Line) -> Result<T, ParserError>,
 >(
     value: &mut Option<T>,
-    line: &Line,
+    line: &Line<'_>,
     duplicate_error_fn: E,
     parser: P,
 ) -> Result<(), ParserError> {
     if value.is_some() {
         return Err(duplicate_error_fn(line.n));
     }
-    *value = Some(parser((line.n, line.value))?);
+    *value = Some(parser(line)?);
     Ok(())
 }
 
@@ -654,7 +655,7 @@ fn parse_str_opt<'a>(
 }
 
 // Line parser helper for converting a byte slice to a string
-fn str_from_utf8((line, s): (usize, &[u8]), field: &'static str) -> Result<String, ParserError> {
+fn str_from_utf8(line: usize, s: &[u8], field: &'static str) -> Result<String, ParserError> {
     std::str::from_utf8(s)
         .map(String::from)
         .map_err(|_| ParserError::InvalidFieldEncoding(line, field))
