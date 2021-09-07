@@ -358,58 +358,58 @@ impl Media {
         })
     }
 
-    fn parse<'a>(
-        lines: &mut std::iter::Peekable<impl Iterator<Item = (usize, &'a [u8])>>,
+    fn parse<'a, I: FallibleIterator<Item = Line<'a>, Error = ParserError>>(
+        lines: &mut fallible_iterator::Peekable<I>,
     ) -> Result<Option<Media>, ParserError> {
-        let media = match line_parser(lines, b'm', b"icbka")
-            .next()?
-            .map(Media::parse_m_line)
-            .transpose()?
-        {
+        let media = match lines.next()? {
             None => return Ok(None),
-            Some(media) => media,
+            Some(line) if line.key == b'm' => Media::parse_m_line((line.n, line.value))?,
+            Some(line) => return Err(ParserError::UnexpectedLine(line.n, line.key)),
         };
 
-        // Parse media information line
-        // - Can exist not at all or exactly once
-        // - Must be followed by "cbka" lines for the this media
-        //   or "m" for the following media
-        let media_title = line_parser_once(
-            lines,
-            b'i',
-            b"cbkam",
-            ParserError::MultipleMediaTitles,
-            |v| str_from_utf8(v, "Media Title"),
-        )?;
+        // As with Session::parse, be more permissive about order than RFC 8866.
+        let mut media_title = None;
+        let mut connections = vec![];
+        let mut bandwidths = vec![];
+        let mut key = None;
+        let mut attributes = vec![];
+        while matches!(lines.peek(), Ok(Some(Line { key, .. })) if *key != b'm') {
+            let line = lines.next().unwrap().unwrap();
 
-        // Parse connection lines
-        // - Can exist not at all, once or multiple times
-        // - Must be followed by "bka" lines for the this media
-        //   or "m" for the following media
-        let connections = line_parser(lines, b'c', b"bkam")
-            .map(Connection::parse)
-            .collect::<Vec<_>>()?;
+            match line.key {
+                // Parse media information line
+                // - Can exist not at all or exactly once
+                b'i' => parse_rejecting_duplicates(
+                    &mut media_title,
+                    &line,
+                    ParserError::MultipleMediaTitles,
+                    |v| str_from_utf8(v, "Media Title"),
+                )?,
 
-        // Parse bandwidth lines:
-        // - Can exist not at all, once or multiple times
-        // - Must be followed by "ka" lines for the this media
-        //   or "m" for the following media
-        let bandwidths = line_parser(lines, b'b', b"kam")
-            .map(Bandwidth::parse)
-            .collect::<Vec<_>>()?;
+                // Parse connection lines
+                // - Can exist not at all, once or multiple times
+                b'c' => connections.push(Connection::parse((line.n, line.value))?),
 
-        // Parse key line
-        // - Can exist not at all or exactly once
-        // - Must be followed by "a" lines for the this media
-        //   or "m" for the following media
-        let key = line_parser_once(lines, b'k', b"am", ParserError::MultipleKeys, Key::parse)?;
+                // Parse bandwidth lines:
+                // - Can exist not at all, once or multiple times
+                b'b' => bandwidths.push(Bandwidth::parse((line.n, line.value))?),
 
-        // Parse attribute lines:
-        // - Can exist not at all, once or multiple times
-        // - Must be followed by "m" lines
-        let attributes = line_parser(lines, b'a', b"m")
-            .map(Attribute::parse)
-            .collect::<Vec<_>>()?;
+                // Parse key line
+                // - Can exist not at all or exactly once
+                b'k' => parse_rejecting_duplicates(
+                    &mut key,
+                    &line,
+                    ParserError::MultipleKeys,
+                    Key::parse,
+                )?,
+
+                // Parse attribute lines:
+                // - Can exist not at all, once or multiple times
+                b'a' => attributes.push(Attribute::parse((line.n, line.value))?),
+
+                o => return Err(ParserError::UnexpectedLine(line.n, o)),
+            }
+        }
 
         Ok(Some(Media {
             media_title,
@@ -427,163 +427,147 @@ impl Session {
     pub fn parse(data: &[u8]) -> Result<Session, ParserError> {
         // Create an iterator which returns for each line its human-readable
         // (1-based) line number and contents.
-        let mut lines = data.lines().enumerate().map(|(i, bytes)| (i + 1, bytes)).peekable();
+        let mut lines =
+            LineParser(data.lines().enumerate().map(|(i, bytes)| (i + 1, bytes))).peekable();
 
-        // See RFC 4566 Section 9 for details
+        // Parses anything allowed by RFC 8866 Section 9 and more:
+        // - be more lax about order. As in the RFC, "v=" must come first and
+        //   "m=" starts the media descriptions. Other fields can come in
+        //   almost any order. "r=" refers to the most recent "t=", even if it's
+        //   not the most recent line.
+        // - allow "t=" line to be missing.
 
-        // Check version line:
-        // - Must only exist exactly
-        // - Must be followed by "o" line
-        // - Must have a value of b"0"
-        line_parser_once(
-            &mut lines,
-            b'v',
-            b"o",
-            ParserError::MultipleVersions,
-            |(line, version)| {
-                if version != b"0" {
-                    Err(ParserError::InvalidVersion(line, version.into()))
-                } else {
-                    Ok(())
+        // Check version line, which we expect to come first.
+        match lines.next()? {
+            Some(Line {
+                n,
+                key: b'v',
+                value,
+            }) => {
+                if value != b"0" {
+                    return Err(ParserError::InvalidVersion(n, value.into()));
                 }
-            },
-        )?
-        .ok_or(ParserError::NoVersion)?;
-
-        // Parse origin line:
-        // - Must only exist exactly once
-        // - Must be followed by "s" line
-        let origin = line_parser_once(
-            &mut lines,
-            b'o',
-            b"s",
-            ParserError::MultipleOrigins,
-            Origin::parse,
-        )?
-        .ok_or(ParserError::NoOrigin)?;
-
-        // Parse session name line:
-        // - Must only exist exactly once
-        // - Must be followed by "iuepcbt" line
-        let session_name = line_parser_once(
-            &mut lines,
-            b's',
-            b"iuepcbt",
-            ParserError::MultipleSessionNames,
-            |v| str_from_utf8(v, "Session Name"),
-        )?
-        .ok_or(ParserError::NoSessionName)?;
-
-        // Parse session information line:
-        // - Must only exist once or not at all
-        // - Must be followed by "uepcbt" line
-        let session_description = line_parser_once(
-            &mut lines,
-            b'i',
-            b"uepcbt",
-            ParserError::MultipleSessionDescription,
-            |v| str_from_utf8(v, "Session Description"),
-        )?;
-
-        // Parse URI line:
-        // - Must only exist once or not at all
-        // - Must be followed by "epcbt" line
-        let uri = line_parser_once(&mut lines, b'u', b"epcbt", ParserError::MultipleUris, |v| {
-            str_from_utf8(v, "Uri")
-        })?;
-
-        // Parse E-Mail lines:
-        // - Can exist not at all, once or multiple times
-        // - Must be followed by "pcbt" line
-        let emails = line_parser(&mut lines, b'e', b"pcbt")
-            .map(|v| str_from_utf8(v, "E-Mail"))
-            .collect::<Vec<_>>()?;
-
-        // Parse phone number lines:
-        // - Can exist not at all, once or multiple times
-        // - Must be followed by "cbt" line
-        let phones = line_parser(&mut lines, b'p', b"cbt")
-            .map(|v| str_from_utf8(v, "Phone"))
-            .collect::<Vec<_>>()?;
-
-        // Parse connection line:
-        // - Can exist not at all or exactly once per session
-        // - Must be followed by "bt" line
-        let connection = line_parser_once(
-            &mut lines,
-            b'c',
-            b"bt",
-            ParserError::MultipleConnections,
-            Connection::parse,
-        )?;
-
-        // Parse bandwidth lines:
-        // - Can exist not at all, once or multiple times
-        // - Must be followed by "t" line
-        let bandwidths = line_parser(&mut lines, b'b', b"t")
-            .map(Bandwidth::parse)
-            .collect::<Vec<_>>()?;
-
-        // Parse time lines
-        // - Must exist at least once
-        // - If followed by "r" lines then these are part of the same time field
-        // - Must be followed by "zam" lines
-        let mut times = vec![];
-        loop {
-            let time = match line_parser(&mut lines, b't', b"rzkam")
-                .next()?
-                .map(Time::parse)
-                .transpose()?
-            {
-                None => break,
-                Some(time) => time,
-            };
-
-            // Parse repeat lines
-            // - Can exist not at all, once or multiple times
-            // - Must be followed by "t" line for the next time, or "zam" lines
-            let repeats = line_parser(&mut lines, b'r', b"tzkam")
-                .map(Repeat::parse)
-                .collect::<Vec<_>>()?;
-
-            times.push(Time { repeats, ..time });
+            }
+            _ => return Err(ParserError::NoVersion),
         }
 
-        // Parse zones line:
-        // - Can exist not at all or exactly once per session
-        // - Must be followed by "am" lines
-        let time_zones = line_parser_once(
-            &mut lines,
-            b'z',
-            b"kam",
-            ParserError::MultipleTimeZones,
-            TimeZone::parse,
-        )?
-        .unwrap_or_else(Vec::new);
+        let mut origin = None;
+        let mut session_name = None;
+        let mut session_description = None;
+        let mut uri = None;
+        let mut emails = vec![];
+        let mut phones = vec![];
+        let mut connection = None;
+        let mut bandwidths = vec![];
+        let mut times = vec![];
+        let mut time_zones = None;
+        let mut attributes = vec![];
+        let mut key = None;
+        while matches!(lines.peek(), Ok(Some(Line { key, .. })) if *key != b'm') {
+            let line = lines.next().unwrap().unwrap();
+            match line.key {
+                // Parse origin line:
+                // - Must only exist exactly once (see check following the loop)
+                b'o' => parse_rejecting_duplicates(
+                    &mut origin,
+                    &line,
+                    ParserError::MultipleOrigins,
+                    Origin::parse,
+                )?,
 
-        // Parse key line
-        // - Can exist not at all or exactly once
-        // - Must be followed by "a" lines for the this media
-        //   or "m" for the following media
-        let key = line_parser_once(
-            &mut lines,
-            b'k',
-            b"am",
-            ParserError::MultipleKeys,
-            Key::parse,
-        )?;
+                // Parse session name line:
+                // - Must only exist exactly once (see check following the loop)
+                b's' => parse_rejecting_duplicates(
+                    &mut session_name,
+                    &line,
+                    ParserError::MultipleSessionNames,
+                    |l| str_from_utf8(l, "Session Name"),
+                )?,
 
-        // Parse attribute lines:
-        // - Can exist not at all, once or multiple times
-        // - Must be followed by "m" lines
-        let attributes = line_parser(&mut lines, b'a', b"m")
-            .map(Attribute::parse)
-            .collect::<Vec<_>>()?;
+                // Parse session information line:
+                // - Must only exist once or not at all
+                b'i' => parse_rejecting_duplicates(
+                    &mut session_description,
+                    &line,
+                    ParserError::MultipleSessionDescription,
+                    |l| str_from_utf8(l, "Session Description"),
+                )?,
+
+                // Parse URI line:
+                // - Must only exist once or not at all
+                b'u' => {
+                    parse_rejecting_duplicates(&mut uri, &line, ParserError::MultipleUris, |l| {
+                        str_from_utf8(l, "Uri")
+                    })?
+                }
+
+                // Parse E-Mail lines:
+                // - Can exist not at all, once or multiple times
+                b'e' => emails.push(str_from_utf8((line.n, line.value), "E-Mail")?),
+
+                // Parse phone number lines:
+                // - Can exist not at all, once or multiple times
+                b'p' => phones.push(str_from_utf8((line.n, line.value), "Phone")?),
+
+                // Parse connection line:
+                // - Can exist not at all or exactly once per session
+                b'c' => parse_rejecting_duplicates(
+                    &mut connection,
+                    &line,
+                    ParserError::MultipleConnections,
+                    Connection::parse,
+                )?,
+
+                // Parse bandwidth lines:
+                // - Can exist not at all, once or multiple times
+                b'b' => bandwidths.push(Bandwidth::parse((line.n, line.value))?),
+
+                // Parse time lines
+                // - If followed by "r" lines then these are part of the same time field
+                b't' => times.push(Time::parse((line.n, line.value))?),
+
+                // Parse repeat lines
+                // - Can exist not at all, once or multiple times
+                b'r' => {
+                    let t = times
+                        .last_mut()
+                        .ok_or(ParserError::UnexpectedLine(line.n, b't'))?;
+                    t.repeats.push(Repeat::parse((line.n, line.value))?);
+                }
+
+                // Parse zones line:
+                // - Can exist not at all or exactly once per session
+                b'z' => parse_rejecting_duplicates(
+                    &mut time_zones,
+                    &line,
+                    ParserError::MultipleTimeZones,
+                    TimeZone::parse,
+                )?,
+
+                // Parse key line
+                // - Can exist not at all or exactly once
+                b'k' => parse_rejecting_duplicates(
+                    &mut key,
+                    &line,
+                    ParserError::MultipleKeys,
+                    Key::parse,
+                )?,
+
+                // Parse attribute lines:
+                // - Can exist not at all, once or multiple times
+                b'a' => attributes.push(Attribute::parse((line.n, line.value))?),
+
+                o => return Err(ParserError::UnexpectedLine(line.n, o)),
+            }
+        }
+
+        let origin = origin.ok_or(ParserError::NoOrigin)?;
+        let session_name = session_name.ok_or(ParserError::NoSessionName)?;
+
+        let time_zones = time_zones.unwrap_or_default();
 
         // Parse media lines:
         // - Can exist not at all, once or multiple times
-        // - Are followed by "icbka" fields for the same media
-        //   or "m" for the following media
         let mut medias = vec![];
         while let Some(media) = Media::parse(&mut lines)? {
             medias.push(media);
@@ -605,6 +589,23 @@ impl Session {
             medias,
         })
     }
+}
+
+fn parse_rejecting_duplicates<
+    T,
+    E: Fn(usize) -> ParserError,
+    P: Fn((usize, &[u8])) -> Result<T, ParserError>,
+>(
+    value: &mut Option<T>,
+    line: &Line,
+    duplicate_error_fn: E,
+    parser: P,
+) -> Result<(), ParserError> {
+    if value.is_some() {
+        return Err(duplicate_error_fn(line.n));
+    }
+    *value = Some(parser((line.n, line.value))?);
+    Ok(())
 }
 
 // Field parser helpers on byte slice iterators
@@ -659,112 +660,50 @@ fn str_from_utf8((line, s): (usize, &[u8]), field: &'static str) -> Result<Strin
         .map_err(|_| ParserError::InvalidFieldEncoding(line, field))
 }
 
+struct Line<'item> {
+    /// The 1-based line number.
+    n: usize,
+
+    key: u8,
+
+    value: &'item [u8],
+}
+
 // Parsing helper iterators below
-struct LineParser<'iter, 'item, I: Iterator<Item = (usize, &'item [u8])>> {
-    it: &'iter mut std::iter::Peekable<I>,
-    current: u8,
-    expected_next: &'static [u8],
-}
+struct LineParser<'item, I: Iterator<Item = (usize, &'item [u8])>>(I);
 
-struct LineParserOnce<
-    'iter,
-    'item,
-    I: Iterator<Item = (usize, &'item [u8])>,
-    F: Fn(usize) -> ParserError,
-> {
-    it: LineParser<'iter, 'item, I>,
-    error_fn: F,
-}
-
-fn line_parser<'iter, 'item, I: Iterator<Item = (usize, &'item [u8])>>(
-    it: &'iter mut std::iter::Peekable<I>,
-    current: u8,
-    expected_next: &'static [u8],
-) -> LineParser<'iter, 'item, I> {
-    LineParser {
-        it,
-        current,
-        expected_next,
-    }
-}
-
-fn line_parser_once<
-    'iter,
-    'item,
-    T,
-    I: Iterator<Item = (usize, &'item [u8])>,
-    F: Fn(usize) -> ParserError,
-    G: Fn((usize, &[u8])) -> Result<T, ParserError>,
->(
-    it: &'iter mut std::iter::Peekable<I>,
-    current: u8,
-    expected_next: &'static [u8],
-    error_fn: F,
-    func: G,
-) -> Result<Option<T>, ParserError> {
-    LineParserOnce {
-        it: line_parser(it, current, expected_next),
-        error_fn,
-    }
-    .next()?
-    .map(func)
-    .transpose()
-}
-
-impl<'iter, 'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator
-    for LineParser<'iter, 'item, I>
-{
-    type Item = (usize, &'item [u8]);
+impl<'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator for LineParser<'item, I> {
+    type Item = Line<'item>;
     type Error = ParserError;
 
     fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
-        while let Some((n, line)) = self.it.peek() {
+        for (n, line) in &mut self.0 {
             if line.is_empty() {
-                self.it.next();
                 continue;
             }
             let equals = line.iter().position(|b| *b == b'=');
             let key = match equals {
                 None => {
                     return Err(ParserError::InvalidLineFormat(
-                        *n,
+                        n,
                         "Line not in key=value format",
                     ))
                 }
                 Some(i) if i == 1 => line[0],
                 _ => {
                     return Err(ParserError::InvalidLineFormat(
-                        *n,
+                        n,
                         "Line key not 1 character",
                     ))
                 }
             };
-
-            return if key == self.current {
-                Ok(self.it.next().map(|(n, line)| (n, &line[2..])))
-            } else if self.expected_next.contains(&key) {
-                Ok(None)
-            } else {
-                Err(ParserError::UnexpectedLine(*n, key))
-            };
+            return Ok(Some(Line {
+                n,
+                key,
+                value: &line[2..],
+            }));
         }
         Ok(None)
-    }
-}
-
-impl<'iter, 'item, I: Iterator<Item = (usize, &'item [u8])>, F: Fn(usize) -> ParserError>
-    FallibleIterator for LineParserOnce<'iter, 'item, I, F>
-{
-    type Item = (usize, &'item [u8]);
-    type Error = ParserError;
-
-    fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
-        let item = self.it.next()?;
-        if let Some((line, _)) = self.it.next()? {
-            return Err((self.error_fn)(line));
-        }
-
-        Ok(item)
     }
 }
 
@@ -918,6 +857,58 @@ b=AS:64\r
 a=control:track1\r
 a=rtpmap:8 PCMA/8000/1\r
 
+";
+        let _parsed = Session::parse(&sdp[..]).unwrap();
+    }
+
+    /// Parses SDP from a Geovision camera which (incorrectly) omits the "t="
+    /// line.
+    #[test]
+    fn parse_sdp_geovision() {
+        let sdp = b"v=0\r
+o=- 1001 1 IN IP4 192.168.5.237\r
+s=VCP IPC Realtime stream\r
+m=video 0 RTP/AVP 105\r
+c=IN IP4 192.168.5.237\r
+a=control:rtsp://192.168.5.237/media/video1/video\r
+a=rtpmap:105 H264/90000\r
+a=fmtp:105 profile-level-id=4d4032; packetization-mode=1; sprop-parameter-sets=Z01AMpWgCoAwfiZuAgICgAAB9AAAdTBC,aO48gA==\r
+a=recvonly\r
+m=application 0 RTP/AVP 107\r
+c=IN IP4 192.168.5.237\r
+a=control:rtsp://192.168.5.237/media/video1/metadata\r
+a=rtpmap:107 vnd.onvif.metadata/90000\r
+a=fmtp:107 DecoderTag=h3c-v3 RTCP=0\r
+a=recvonly\r
+";
+        let _parsed = Session::parse(&sdp[..]).unwrap();
+    }
+
+    /// Parses SDP from an Anpviz camera which (incorrectly) places an `a=`
+    /// between the `c=` and `t=` lines of a session.
+    #[test]
+    fn parse_sdp_anpviz() {
+        let sdp = b"v=0\r
+o=- 1109162014219182 1109162014219192 IN IP4 x.y.z.w\r
+s=RTSP/RTP stream from anjvision ipcamera\r
+e=NONE\r
+c=IN IP4 0.0.0.0\r
+a=tool:LIVE555 Streaming Media v2011.05.25 CHAM.LI@ANJVISION.COM\r
+t=0 0\r
+a=range:npt=0-\r
+a=control:*\r
+m=video 0 RTP/AVP 96\r
+a=rtpmap:96 H264/90000\r
+a=control:trackID=1\r
+a=fmtp:96 profile-level-id=4D401F;packetization-mode=0;sprop-parameter-sets=Z01AH5WgLASabAQ=,aO48gA==;config=00000001674d401f95a02c049a6c040000000168ee3c800000000106f02c0445c6f5000620ebc2f3f7639e48250bfcb561bb2b85dda6fe5f06cc8b887b6a915f5aa3bebfffffffffff7380\r
+a=x-dimensions: 704, 576\r
+a=x-framerate: 12\r
+m=audio 0 RTP/AVP 0\r
+a=rtpmap:0 MPEG4-GENERIC/16000/2\r
+a=fmtp:0 config=1408\r
+a=control:trackID=2\r
+a=Media_header:MEDIAINFO=494D4B48010100000400010010710110401F000000FA000000000000000000000000000000000000;\r
+a=appversion:1.0\r
 ";
         let _parsed = Session::parse(&sdp[..]).unwrap();
     }

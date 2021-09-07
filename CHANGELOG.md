@@ -9,6 +9,11 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ### Fixed
 - Use 1-based line numbers in errors.
 
+### Changed
+- Be more permissive about the ordering of fields in both session and media
+  descriptions.
+- Allow `t=` to be missing from the session description.
+
 ## [0.1.2] - 2021-06-05
 ### Fixed
 - Ignore blank lines inside the SDP.
