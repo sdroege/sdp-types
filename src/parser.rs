@@ -425,7 +425,9 @@ impl Media {
 impl Session {
     /// Parse an SDP session description from a byte slice.
     pub fn parse(data: &[u8]) -> Result<Session, ParserError> {
-        let mut lines = data.lines().enumerate().peekable();
+        // Create an iterator which returns for each line its human-readable
+        // (1-based) line number and contents.
+        let mut lines = data.lines().enumerate().map(|(i, bytes)| (i + 1, bytes)).peekable();
 
         // See RFC 4566 Section 9 for details
 
@@ -888,6 +890,17 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
     }
 
     #[test]
+    fn unexpected_line_err() {
+        match Session::parse(b"v=0\r\n*=asdf\r\n") {
+            Err(ParserError::UnexpectedLine(line, c)) => {
+                assert_eq!(line, 2);
+                assert_eq!(c, b'*');
+            }
+            o => panic!("bad result: {:#?}", o),
+        }
+    }
+
+    #[test]
     fn parse_sdp_real_camera() {
         let sdp = b"v=0\r
 o=VSTC 3828747520 3828747520 IN IP4 192.168.1.165\r
@@ -913,7 +926,7 @@ a=rtpmap:8 PCMA/8000/1\r
     fn parse_overflowing_time() {
         assert_eq!(
             Session::parse(b"v=0\no=  0  =\x00 \ns=q\nt=0 5\nz=00 666666000079866660m "),
-            Err(ParserError::InvalidFieldFormat(4, "TimeZone offset"))
+            Err(ParserError::InvalidFieldFormat(5, "TimeZone offset"))
         );
     }
 }
