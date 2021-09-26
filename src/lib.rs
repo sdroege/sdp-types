@@ -43,9 +43,6 @@
 //!    are currently parsed as a plain string and not according to the SDP
 //!    grammar.
 
-use bstr::*;
-use fallible_iterator::FallibleIterator;
-
 mod parser;
 mod writer;
 
@@ -304,7 +301,6 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn parse_write() {
         let sdp = "v=0\r

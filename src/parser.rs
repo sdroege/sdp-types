@@ -4,6 +4,8 @@
 
 use super::*;
 
+type NomError<'a> = nom::Err<nom::error::VerboseError<&'a [u8]>>;
+
 /// Parsing errors that can be returned from [`Session::parse`].
 ///
 /// [`Session::parse`]: struct.Session.html#method.parse
@@ -107,122 +109,151 @@ impl std::fmt::Display for ParserError {
 }
 
 impl Origin {
-    fn parse(line: &Line) -> Result<Origin, ParserError> {
-        // <username> <sess-id> <sess-version> <nettype> <addrtype> <unicast-address>
-        let mut origin = line.value.splitn_str(6, b" ");
-        let username = parse_str(&mut origin, line.n, "Origin username")?;
-        let sess_id = parse_str(&mut origin, line.n, "Origin sess-id")?;
-        let sess_version = parse_str_u64(&mut origin, line.n, "Origin sess-version")?;
-        let nettype = parse_str(&mut origin, line.n, "Origin nettype")?;
-        let addrtype = parse_str(&mut origin, line.n, "Origin addrtype")?;
-        let unicast_address = parse_str(&mut origin, line.n, "Origin unicast-address")?;
+    fn parse(line: Line) -> Result<Self, ParserError> {
+        use nom::{
+            bytes::complete::{tag, take_until},
+            sequence::terminated,
+        };
 
-        Ok(Origin {
-            username: if username == "-" {
+        let (rem, username) = terminated(take_until(" "), tag(" "))(line.value)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Origin username"))?;
+
+        let (rem, sess_id) = terminated(take_until(" "), tag(" "))(rem)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Origin sess-id"))?;
+
+        let (rem, sess_version) =
+            terminated(take_until(" "), tag(" "))(rem).map_err(|_: NomError| {
+                ParserError::InvalidFieldFormat(line.n, "Origin sess-version")
+            })?;
+
+        let (rem, nettype) = terminated(take_until(" "), tag(" "))(rem)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Origin nettype"))?;
+
+        let (unicast_address, addrtype) = terminated(take_until(" "), tag(" "))(rem)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Origin addrtype"))?;
+
+        Ok(Self {
+            username: if username == "-".as_bytes() {
                 None
             } else {
-                Some(username)
+                Some(parse_str(username, line.n, "Origin username")?)
             },
-            sess_id,
-            sess_version,
-            nettype,
-            addrtype,
-            unicast_address,
+            sess_id: parse_str(sess_id, line.n, "Origin sess-id")?,
+            sess_version: parse_parsable(sess_version, line.n, "Origin sess-version")?,
+            nettype: parse_str(nettype, line.n, "Origin nettype")?,
+            addrtype: parse_str(addrtype, line.n, "Origin addrtype")?,
+            unicast_address: parse_str(unicast_address, line.n, "Origin unicast-address")?,
         })
     }
 }
 
 impl Connection {
-    fn parse(line: &Line) -> Result<Connection, ParserError> {
-        // <nettype> <addrtype> <connection-address>
-        let mut connection = line.value.splitn_str(3, b" ");
-        let nettype = parse_str(&mut connection, line.n, "Connection nettype")?;
-        let addrtype = parse_str(&mut connection, line.n, "Connection addrtype")?;
-        let connection_address =
-            parse_str(&mut connection, line.n, "Connection connection-address")?;
+    fn parse(line: Line) -> Result<Self, ParserError> {
+        use nom::{
+            bytes::complete::{tag, take_until},
+            sequence::terminated,
+        };
 
-        Ok(Connection {
-            nettype,
-            addrtype,
-            connection_address,
+        let (rem, nettype) = terminated(take_until(" "), tag(" "))(line.value)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Connection nettype"))?;
+
+        let (connection_address, addrtype) =
+            terminated(take_until(" "), tag(" "))(rem).map_err(|_: NomError| {
+                ParserError::InvalidFieldFormat(line.n, "Connection addrtype")
+            })?;
+
+        Ok(Self {
+            nettype: parse_str(nettype, line.n, "Connection nettype")?,
+            addrtype: parse_str(addrtype, line.n, "Connection addrtype")?,
+            connection_address: parse_str(
+                connection_address,
+                line.n,
+                "Connection connection-address",
+            )?,
         })
     }
 }
 
 impl Bandwidth {
-    fn parse(line: &Line) -> Result<Bandwidth, ParserError> {
-        // <bwtype>:<bandwidth>
-        let mut bandwidth = line.value.split_str(b":");
-        let bwtype = parse_str(&mut bandwidth, line.n, "Bandwidth bwtype")?;
-        let bw = parse_str_u64(&mut bandwidth, line.n, "Bandwidth bandwidth")?;
-        if bandwidth.next().is_some() {
-            return Err(ParserError::FieldTrailingData(line.n, "Bandwidth"));
-        }
+    fn parse(line: Line) -> Result<Self, ParserError> {
+        use nom::{
+            bytes::complete::{tag, take_until},
+            sequence::terminated,
+        };
 
-        Ok(Bandwidth {
-            bwtype,
-            bandwidth: bw,
+        let (bandwidth, bwtype) = terminated(take_until(":"), tag(":"))(line.value)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Bandwidth bwtype"))?;
+
+        Ok(Self {
+            bwtype: parse_str(bwtype, line.n, "Bandwidth bwtype")?,
+            bandwidth: parse_parsable(bandwidth, line.n, "Bandwidth bandwidth")?,
         })
     }
 }
 
 impl Time {
-    fn parse(line: &Line) -> Result<Time, ParserError> {
-        // <start-time> <stop-time>
-        let mut time = line.value.split_str(b" ");
-        let start_time = parse_str_u64(&mut time, line.n, "Time start-time")?;
-        let stop_time = parse_str_u64(&mut time, line.n, "Time stop-time")?;
-        if time.next().is_some() {
-            return Err(ParserError::FieldTrailingData(line.n, "Time"));
-        }
+    fn parse(line: Line) -> Result<Time, ParserError> {
+        use nom::{
+            bytes::complete::{tag, take_until},
+            sequence::terminated,
+        };
+
+        let (stop_time, start_time) = terminated(take_until(" "), tag(" "))(line.value)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Time start-time"))?;
+
+        Ok(Self {
+            start_time: parse_parsable(start_time, line.n, "Time start-time")?,
+            stop_time: parse_parsable(stop_time, line.n, "Time stop-time")?,
+            repeats: vec![],
+        })
+    }
+
+    fn parse_with_repeats(time_line: Line, repeat_line: Vec<Line>) -> Result<Time, ParserError> {
+        let time = Self::parse(time_line)?;
+        let repeats = repeat_line
+            .into_iter()
+            .map(Repeat::parse)
+            .collect::<Result<_, _>>()?;
 
         Ok(Time {
-            start_time,
-            stop_time,
-            repeats: Vec::new(),
+            start_time: time.start_time,
+            stop_time: time.stop_time,
+            repeats,
         })
     }
 }
 
-fn parse_typed_time(s: &[u8], line: usize, field: &'static str) -> Result<u64, ParserError> {
-    let (num, factor) = match s
-        .split_last()
-        .ok_or(ParserError::InvalidFieldFormat(line, field))?
-    {
-        (b'd', prefix) => (prefix, 86_400),
-        (b'h', prefix) => (prefix, 3_600),
-        (b'm', prefix) => (prefix, 60),
-        (b's', prefix) => (prefix, 1),
-        (_, _) => (s, 1),
-    };
-
-    let num =
-        std::str::from_utf8(num).map_err(|_| ParserError::InvalidFieldEncoding(line, field))?;
-    let num = num
-        .parse::<u64>()
-        .map_err(|_| ParserError::InvalidFieldFormat(line, field))?;
-    num.checked_mul(factor)
-        .ok_or(ParserError::InvalidFieldFormat(line, field))
-}
-
 impl Repeat {
-    fn parse(line: &Line) -> Result<Repeat, ParserError> {
-        // <repeat interval> <active duration> <offsets from start-time>
-        let mut repeat = line.value.split_str(b" ");
-        let repeat_interval = repeat
-            .next()
-            .ok_or(ParserError::MissingField(line.n, "Repeat repeat-interval"))
-            .and_then(|s| parse_typed_time(s, line.n, "Repeat repeat-interval"))?;
-        let active_duration = repeat
-            .next()
-            .ok_or(ParserError::MissingField(line.n, "Repeat active-duration"))
-            .and_then(|s| parse_typed_time(s, line.n, "Repeat active-duration"))?;
+    fn parse(line: Line) -> Result<Repeat, ParserError> {
+        use nom::{
+            branch::alt,
+            bytes::complete::{tag, take_until},
+            combinator::{eof, rest},
+            multi::many_till,
+            sequence::terminated,
+        };
 
-        let offsets = repeat
-            .map(|s| parse_typed_time(s, line.n, "Repeat active-duration"))
-            .collect::<Result<Vec<_>, _>>()?;
+        let (rem, repeat_interval) = terminated(take_until(" "), tag(" "))(line.value)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Repeat interval"))?;
+        let repeat_interval = parse_typed_time(repeat_interval, line.n, "Repeat interval")? as u64;
 
-        Ok(Repeat {
+        let (rem, active_duration) = alt((terminated(take_until(" "), tag(" ")), rest))(rem)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Repeat duration"))?;
+        let active_duration = parse_typed_time(active_duration, line.n, "Repeat interval")? as u64;
+
+        //many0 parser fails as soon as you use a child parser (like rest) that doesn't alter
+        //input, this feels like a bug and should actually return in place and not fail
+        //hence we use many_till here
+        let (_, (offsets, _)) = many_till(alt((terminated(take_until(" "), tag(" ")), rest)), eof)(
+            rem,
+        )
+        .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Repeat offsets 1"))?;
+        let offsets = offsets
+            .into_iter()
+            .map(|o| parse_typed_time(o, line.n, "Repeat offsets").map(|o| o as u64))
+            .collect::<Result<_, _>>()?;
+
+        Ok(Self {
             repeat_interval,
             active_duration,
             offsets,
@@ -231,126 +262,191 @@ impl Repeat {
 }
 
 impl TimeZone {
-    fn parse(line: &Line) -> Result<Vec<TimeZone>, ParserError> {
-        // <adjustment time> <offset> <adjustment time> <offset> ....
-        let mut zones = line.value.split_str(b" ");
+    #[allow(clippy::bind_instead_of_map)]
+    fn parse(line: Line) -> Result<Vec<Self>, ParserError> {
+        use nom::{
+            branch::alt,
+            bytes::complete::{tag, take_until},
+            combinator::{map, rest},
+            error::VerboseError,
+            multi::many1,
+            sequence::tuple,
+        };
 
-        let mut ret = Vec::new();
-        loop {
-            let adjustment_time = parse_str_u64(&mut zones, line.n, "TimeZone adjustment-time");
-
-            let adjustment_time = match adjustment_time {
-                Ok(adjustment_time) => adjustment_time,
-                Err(ParserError::MissingField(..)) => break,
-                Err(err) => return Err(err),
-            };
-
-            let offset = zones
-                .next()
-                .ok_or(ParserError::MissingField(line.n, "TimeZone offset"))
-                .and_then(|s| {
-                    use std::convert::TryInto;
-
-                    let (sign, s) = if s.get(0) == Some(&b'-') {
-                        (true, &s[1..])
-                    } else {
-                        (false, s)
-                    };
-
-                    parse_typed_time(s, line.n, "TimeZone offset")
-                        .and_then(|t| {
-                            t.try_into().map_err(|_| {
-                                ParserError::InvalidFieldFormat(line.n, "TimeZone offset")
+        let timezone_parser = map::<_, _, _, VerboseError<&[u8]>, _, _>(
+            tuple((
+                take_until(" "),
+                tag(" "),
+                alt((
+                    map(tuple((take_until(" "), tag(" "))), |tuple| tuple.0),
+                    rest,
+                )),
+            )),
+            |(adjustment_time, _, offset)| (adjustment_time, offset),
+        );
+        //(_, timezones): (&[u8], Vec<(&[u8], &[u8])>)
+        let (_, timezones) = many1(timezone_parser)(line.value).map_err(|_: NomError| {
+            ParserError::InvalidFieldFormat(line.n, "TimeZone adjustment-time or offset")
+        })?;
+        let timezones: Result<Vec<Self>, ParserError> = timezones
+            .into_iter()
+            .map(|(adjustment_time, offset)| {
+                parse_typed_time(offset, line.n, "TimeZone offset").and_then(|offset| {
+                    parse_parsable(adjustment_time, line.n, "TimeZone adjustment-time").and_then(
+                        |adjustment_time| {
+                            Ok(Self {
+                                adjustment_time,
+                                offset,
                             })
-                        })
-                        .map(|t: i64| if sign { -t } else { t })
-                })?;
+                        },
+                    )
+                })
+            })
+            .collect();
 
-            ret.push(TimeZone {
-                adjustment_time,
-                offset,
-            });
-        }
-
-        Ok(ret)
+        timezones
     }
 }
 
 impl Attribute {
-    fn parse(line: &Line) -> Result<Attribute, ParserError> {
-        // <attribute>:<value>
-        // <attribute>
-        let mut attribute = line.value.splitn_str(2, b":");
-        let name = parse_str(&mut attribute, line.n, "Attribute name")?;
-        let value = parse_str_opt(&mut attribute, line.n, "Attribute value")?;
+    fn parse(line: Line) -> Result<Self, ParserError> {
+        use nom::{
+            branch::alt,
+            bytes::complete::{tag, take_until},
+            combinator::{opt, rest},
+            sequence::preceded,
+        };
 
-        Ok(Attribute {
-            attribute: name,
-            value,
+        let (rem, attribute) = alt((take_until(":"), rest))(line.value)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Attribute name"))?;
+        let (_, value) = opt(preceded(tag(":"), rest))(rem)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Attribute value"))?;
+
+        Ok(Self {
+            attribute: parse_str(attribute, line.n, "Attribute name")?,
+            value: value
+                .map(|v| parse_str(v, line.n, "Attribute value"))
+                .transpose()?,
         })
     }
 }
 
 impl Key {
-    fn parse(line: &Line) -> Result<Key, ParserError> {
-        // <method>:<encryption key>
-        // <method>
-        let mut key = line.value.splitn_str(2, b":");
-        let method = parse_str(&mut key, line.n, "Key method")?;
-        let encryption_key = parse_str_opt(&mut key, line.n, "Key encryption-key")?;
+    fn parse(line: Line) -> Result<Self, ParserError> {
+        use nom::{
+            branch::alt,
+            bytes::complete::{tag, take_until},
+            combinator::{opt, rest},
+            sequence::preceded,
+        };
 
-        Ok(Key {
-            method,
-            encryption_key,
+        let (rem, method) = alt((take_until(":"), rest))(line.value)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Key method"))?;
+        let (_, encryption_key) = opt(preceded(tag(":"), rest))(rem)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Key encryption-key"))?;
+
+        Ok(Self {
+            method: parse_str(method, line.n, "Key method")?,
+            encryption_key: encryption_key
+                .map(|v| parse_str(v, line.n, "Key encryption-key"))
+                .transpose()?,
         })
     }
 }
 
 impl Media {
-    fn parse_m_line(line: &Line) -> Result<Media, ParserError> {
-        // <media> <port> <proto> <fmt> ...
-        let mut media = line.value.splitn_str(4, b" ");
-        let name = parse_str(&mut media, line.n, "Media name")?;
+    fn parse_all(line_number: usize, input: &[u8]) -> Result<Vec<Self>, ParserError> {
+        let mut rem = input;
+        let mut next_n = line_number;
+        let mut medias = vec![];
 
-        let (port, num_ports) = media
-            .next()
-            .ok_or(ParserError::MissingField(line.n, "Media port"))
-            .and_then(|s| str_from_utf8(line.n, s, "Media Port"))
-            .and_then(|port| {
-                let mut split = port.splitn(2, '/');
-                let port = split
-                    .next()
-                    .ok_or(ParserError::MissingField(line.n, "Media port"))
-                    .and_then(|port| {
-                        port.parse()
-                            .map_err(|_| ParserError::InvalidFieldFormat(line.n, "Media port"))
-                    })?;
+        loop {
+            let old_len = rem.len();
+            let tuple = Self::parse_single(next_n, rem)?;
+            rem = tuple.0;
+            next_n = tuple.1;
+            let media = tuple.2;
 
-                let num_ports = split
-                    .next()
-                    .ok_or(ParserError::MissingField(line.n, "Media num-ports"))
-                    .and_then(|num_ports| {
-                        num_ports
-                            .parse()
-                            .map_err(|_| ParserError::InvalidFieldFormat(line.n, "Media num-ports"))
-                    });
+            if old_len == rem.len() {
+                break;
+            }
+            medias.push(media);
+            if rem.is_empty() {
+                break;
+            }
+        }
 
-                match num_ports {
-                    Ok(num_ports) => Ok((port, Some(num_ports))),
-                    Err(ParserError::MissingField(..)) => Ok((port, None)),
-                    Err(err) => Err(err),
-                }
-            })?;
+        Ok(medias)
+    }
 
-        let proto = parse_str(&mut media, line.n, "Media proto")?;
-        let fmt = parse_str(&mut media, line.n, "Media fmt")?;
+    fn parse_single(line_number: usize, input: &[u8]) -> Result<(&[u8], usize, Self), ParserError> {
+        let (rem, next_n, media) = parse_line("m=", line_number, input, "Media line")?;
+        let (rem, next_n, media_info) = parse_opt_line("i=", next_n, rem, "Media info")?;
+        let (rem, next_n, connections) = parse_multi0("c=", next_n, rem, "Media connection")?;
+        let (rem, next_n, bandwidths) = parse_multi0("b=", next_n, rem, "Session bandwidth")?;
+        let (rem, next_n, key) = parse_opt_line("k=", next_n, rem, "Session key")?;
+        let (rem, next_n, attributes) = parse_multi0("a=", next_n, rem, "Session attribute")?;
+
+        let media = Self::parse_m_line(media)?;
+
+        let media = Media {
+            media: media.media,
+            port: media.port,
+            num_ports: media.num_ports,
+            proto: media.proto,
+            fmt: media.fmt,
+            media_title: media_info
+                .map(|s| parse_str(s.value, s.n, "Session info"))
+                .transpose()?,
+            connections: connections
+                .into_iter()
+                .map(Connection::parse)
+                .collect::<Result<_, _>>()?,
+            bandwidths: bandwidths
+                .into_iter()
+                .map(Bandwidth::parse)
+                .collect::<Result<_, _>>()?,
+            key: key.map(Key::parse).transpose()?,
+            attributes: attributes
+                .into_iter()
+                .map(Attribute::parse)
+                .collect::<Result<_, _>>()?,
+        };
+
+        Ok((rem, next_n, media))
+    }
+
+    fn parse_m_line(line: Line) -> Result<Media, ParserError> {
+        use nom::{
+            bytes::complete::{tag, take_until},
+            combinator::rest,
+            error::VerboseError,
+            sequence::{terminated, tuple},
+        };
+
+        let (rem, name) = terminated(take_until(" "), tag(" "))(line.value)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Media name"))?;
+
+        let (rem, port) = terminated(take_until(" "), tag(" "))(rem)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Media port"))?;
+
+        let (port, num_ports) =
+            match tuple::<_, _, VerboseError<&[u8]>, _>((take_until("/"), tag("/"), rest))(port) {
+                Ok((_, (port, _, num_ports))) => (port, Some(num_ports)),
+                Err(_) => (port, None),
+            };
+
+        let (fmt, proto) = terminated(take_until(" "), tag(" "))(rem)
+            .map_err(|_: NomError| ParserError::InvalidFieldFormat(line.n, "Media proto"))?;
 
         Ok(Media {
-            media: name,
-            port,
-            num_ports,
-            proto,
-            fmt,
+            media: parse_str(name, line.n, "Media name")?,
+            port: parse_parsable(port, line.n, "Media port")?,
+            num_ports: num_ports
+                .map(|n| parse_parsable(n, line.n, "Media num_ports"))
+                .transpose()?,
+            proto: parse_str(proto, line.n, "Media proto")?,
+            fmt: parse_str(fmt, line.n, "Media fmt")?,
             media_title: None,
             connections: Vec::new(),
             bandwidths: Vec::new(),
@@ -358,353 +454,290 @@ impl Media {
             attributes: Vec::new(),
         })
     }
-
-    fn parse<'a, I: FallibleIterator<Item = Line<'a>, Error = ParserError>>(
-        lines: &mut fallible_iterator::Peekable<I>,
-    ) -> Result<Option<Media>, ParserError> {
-        let media = match lines.next()? {
-            None => return Ok(None),
-            Some(line) if line.key == b'm' => Media::parse_m_line(&line)?,
-            Some(line) => return Err(ParserError::UnexpectedLine(line.n, line.key)),
-        };
-
-        // As with Session::parse, be more permissive about order than RFC 8866.
-        let mut media_title = None;
-        let mut connections = vec![];
-        let mut bandwidths = vec![];
-        let mut key = None;
-        let mut attributes = vec![];
-        while matches!(lines.peek(), Ok(Some(Line { key, .. })) if *key != b'm') {
-            let line = lines.next().unwrap().unwrap();
-
-            match line.key {
-                // Parse media information line
-                // - Can exist not at all or exactly once
-                b'i' => parse_rejecting_duplicates(
-                    &mut media_title,
-                    &line,
-                    ParserError::MultipleMediaTitles,
-                    |l| str_from_utf8(l.n, l.value, "Media Title"),
-                )?,
-
-                // Parse connection lines
-                // - Can exist not at all, once or multiple times
-                b'c' => connections.push(Connection::parse(&line)?),
-
-                // Parse bandwidth lines:
-                // - Can exist not at all, once or multiple times
-                b'b' => bandwidths.push(Bandwidth::parse(&line)?),
-
-                // Parse key line
-                // - Can exist not at all or exactly once
-                b'k' => parse_rejecting_duplicates(
-                    &mut key,
-                    &line,
-                    ParserError::MultipleKeys,
-                    Key::parse,
-                )?,
-
-                // Parse attribute lines:
-                // - Can exist not at all, once or multiple times
-                b'a' => attributes.push(Attribute::parse(&line)?),
-
-                o => return Err(ParserError::UnexpectedLine(line.n, o)),
-            }
-        }
-
-        Ok(Some(Media {
-            media_title,
-            connections,
-            bandwidths,
-            key,
-            attributes,
-            ..media
-        }))
-    }
 }
 
 impl Session {
     /// Parse an SDP session description from a byte slice.
-    pub fn parse(data: &[u8]) -> Result<Session, ParserError> {
-        // Create an iterator which returns for each line its human-readable
-        // (1-based) line number and contents.
-        let mut lines =
-            LineParser(data.lines().enumerate().map(|(i, bytes)| (i + 1, bytes))).peekable();
+    pub fn parse(input: &[u8]) -> Result<Session, ParserError> {
+        let (rem, next_n) = parse_version(input)?;
+        let (rem, next_n, origin) = parse_line("o=", next_n, rem, "Session originator")?;
 
-        // Parses anything allowed by RFC 8866 Section 9 and more:
-        // - be more lax about order. As in the RFC, "v=" must come first and
-        //   "m=" starts the media descriptions. Other fields can come in
-        //   almost any order. "r=" refers to the most recent "t=", even if it's
-        //   not the most recent line.
-        // - allow "t=" line to be missing.
+        let (rem, next_n, session_name) = parse_line("s=", next_n, rem, "Session name")?;
 
-        // Check version line, which we expect to come first.
-        match lines.next()? {
-            Some(Line {
-                n,
-                key: b'v',
-                value,
-            }) => {
-                if value != b"0" {
-                    return Err(ParserError::InvalidVersion(n, value.into()));
-                }
-            }
-            _ => return Err(ParserError::NoVersion),
-        }
+        let (rem, next_n, session_info) = parse_opt_line("i=", next_n, rem, "Session info")?;
 
-        let mut origin = None;
-        let mut session_name = None;
-        let mut session_description = None;
-        let mut uri = None;
-        let mut emails = vec![];
-        let mut phones = vec![];
-        let mut connection = None;
-        let mut bandwidths = vec![];
-        let mut times = vec![];
-        let mut time_zones = None;
-        let mut attributes = vec![];
-        let mut key = None;
-        while matches!(lines.peek(), Ok(Some(Line { key, .. })) if *key != b'm') {
-            let line = lines.next().unwrap().unwrap();
-            match line.key {
-                // Parse origin line:
-                // - Must only exist exactly once (see check following the loop)
-                b'o' => parse_rejecting_duplicates(
-                    &mut origin,
-                    &line,
-                    ParserError::MultipleOrigins,
-                    Origin::parse,
-                )?,
-
-                // Parse session name line:
-                // - Must only exist exactly once (see check following the loop)
-                b's' => parse_rejecting_duplicates(
-                    &mut session_name,
-                    &line,
-                    ParserError::MultipleSessionNames,
-                    |l| str_from_utf8(l.n, l.value, "Session Name"),
-                )?,
-
-                // Parse session information line:
-                // - Must only exist once or not at all
-                b'i' => parse_rejecting_duplicates(
-                    &mut session_description,
-                    &line,
-                    ParserError::MultipleSessionDescription,
-                    |l| str_from_utf8(l.n, l.value, "Session Description"),
-                )?,
-
-                // Parse URI line:
-                // - Must only exist once or not at all
-                b'u' => {
-                    parse_rejecting_duplicates(&mut uri, &line, ParserError::MultipleUris, |l| {
-                        str_from_utf8(l.n, l.value, "Uri")
-                    })?
-                }
-
-                // Parse E-Mail lines:
-                // - Can exist not at all, once or multiple times
-                b'e' => emails.push(str_from_utf8(line.n, line.value, "E-Mail")?),
-
-                // Parse phone number lines:
-                // - Can exist not at all, once or multiple times
-                b'p' => phones.push(str_from_utf8(line.n, line.value, "Phone")?),
-
-                // Parse connection line:
-                // - Can exist not at all or exactly once per session
-                b'c' => parse_rejecting_duplicates(
-                    &mut connection,
-                    &line,
-                    ParserError::MultipleConnections,
-                    Connection::parse,
-                )?,
-
-                // Parse bandwidth lines:
-                // - Can exist not at all, once or multiple times
-                b'b' => bandwidths.push(Bandwidth::parse(&line)?),
-
-                // Parse time lines
-                // - If followed by "r" lines then these are part of the same time field
-                b't' => times.push(Time::parse(&line)?),
-
-                // Parse repeat lines
-                // - Can exist not at all, once or multiple times
-                b'r' => {
-                    let t = times
-                        .last_mut()
-                        .ok_or(ParserError::UnexpectedLine(line.n, b't'))?;
-                    t.repeats.push(Repeat::parse(&line)?);
-                }
-
-                // Parse zones line:
-                // - Can exist not at all or exactly once per session
-                b'z' => parse_rejecting_duplicates(
-                    &mut time_zones,
-                    &line,
-                    ParserError::MultipleTimeZones,
-                    TimeZone::parse,
-                )?,
-
-                // Parse key line
-                // - Can exist not at all or exactly once
-                b'k' => parse_rejecting_duplicates(
-                    &mut key,
-                    &line,
-                    ParserError::MultipleKeys,
-                    Key::parse,
-                )?,
-
-                // Parse attribute lines:
-                // - Can exist not at all, once or multiple times
-                b'a' => attributes.push(Attribute::parse(&line)?),
-
-                o => return Err(ParserError::UnexpectedLine(line.n, o)),
-            }
-        }
-
-        let origin = origin.ok_or(ParserError::NoOrigin)?;
-        let session_name = session_name.ok_or(ParserError::NoSessionName)?;
-
-        let time_zones = time_zones.unwrap_or_default();
-
-        // Parse media lines:
-        // - Can exist not at all, once or multiple times
-        let mut medias = vec![];
-        while let Some(media) = Media::parse(&mut lines)? {
-            medias.push(media);
-        }
+        let (rem, next_n, uri) = parse_opt_line("u=", next_n, rem, "Session uri")?;
+        let (rem, next_n, emails) = parse_multi0("e=", next_n, rem, "Session email")?;
+        let (rem, next_n, phones) = parse_multi0("p=", next_n, rem, "Session phone")?;
+        let (rem, next_n, connection) = parse_opt_line("c=", next_n, rem, "Session connection")?;
+        let (rem, next_n, bandwidths) = parse_multi0("b=", next_n, rem, "Session bandwidth")?;
+        let (rem, next_n, time_with_repeats) = parse_time_with_repeats_many0(next_n, rem)?;
+        let (rem, next_n, time_zone) = parse_opt_line("z=", next_n, rem, "Session timezone")?;
+        let (rem, next_n, key) = parse_opt_line("k=", next_n, rem, "Session key")?;
+        let (rem, next_n, attributes) = parse_multi0("a=", next_n, rem, "Session attribute")?;
 
         Ok(Session {
-            origin,
-            session_name,
-            session_description,
-            uri,
-            emails,
-            phones,
-            connection,
-            bandwidths,
-            times,
-            time_zones,
-            key,
-            attributes,
-            medias,
+            origin: Origin::parse(origin)?,
+            session_name: parse_str(session_name.value, session_name.n, "Session name")?,
+            session_description: session_info
+                .map(|s| parse_str(s.value, s.n, "Session info"))
+                .transpose()?,
+            uri: uri
+                .map(|u| parse_str(u.value, u.n, "Session uri"))
+                .transpose()?,
+            emails: emails
+                .into_iter()
+                .map(|e| parse_str(e.value, e.n, "Session email"))
+                .collect::<Result<_, _>>()?,
+            phones: phones
+                .into_iter()
+                .map(|e| parse_str(e.value, e.n, "Session phone"))
+                .collect::<Result<_, _>>()?,
+            connection: connection.map(Connection::parse).transpose()?,
+            bandwidths: bandwidths
+                .into_iter()
+                .map(Bandwidth::parse)
+                .collect::<Result<_, _>>()?,
+            times: time_with_repeats
+                .into_iter()
+                .map(|tuple| Time::parse_with_repeats(tuple.0, tuple.1))
+                .collect::<Result<_, _>>()?,
+            time_zones: time_zone
+                .map(TimeZone::parse)
+                .transpose()?
+                .unwrap_or_else(Vec::new),
+            key: key.map(Key::parse).transpose()?,
+            attributes: attributes
+                .into_iter()
+                .map(Attribute::parse)
+                .collect::<Result<_, _>>()?,
+            medias: Media::parse_all(next_n, rem)?,
         })
     }
 }
 
-fn parse_rejecting_duplicates<
-    T,
-    E: Fn(usize) -> ParserError,
-    P: Fn(&Line) -> Result<T, ParserError>,
->(
-    value: &mut Option<T>,
-    line: &Line<'_>,
-    duplicate_error_fn: E,
-    parser: P,
-) -> Result<(), ParserError> {
-    if value.is_some() {
-        return Err(duplicate_error_fn(line.n));
+fn parse_version(input: &[u8]) -> Result<(&[u8], usize), ParserError> {
+    let (rem, next_n, version) = parse_line("v=", 1, input, "version")?;
+    if version.value != b"0" {
+        Err(ParserError::InvalidVersion(1, version.value.into()))
+    } else {
+        Ok((rem, next_n))
     }
-    *value = Some(parser(line)?);
-    Ok(())
 }
 
-// Field parser helpers on byte slice iterators
-fn parse_str<'a>(
-    it: &mut impl Iterator<Item = &'a [u8]>,
-    line: usize,
-    field: &'static str,
-) -> Result<String, ParserError> {
-    it.next()
-        .ok_or(ParserError::MissingField(line, field))
-        .and_then(|b| {
-            std::str::from_utf8(b)
-                .map(String::from)
-                .map_err(|_| ParserError::InvalidFieldEncoding(line, field))
-        })
+#[allow(clippy::type_complexity)]
+fn parse_time_with_repeats_many0(
+    line_number: usize,
+    input: &[u8],
+) -> Result<(&[u8], usize, Vec<(Line, Vec<Line>)>), ParserError> {
+    let mut vec = vec![];
+    let mut next_n = line_number;
+    let mut rem = input;
+    loop {
+        let tuple = parse_time_with_repeats(next_n, rem)?;
+        rem = tuple.0;
+        next_n = tuple.1;
+        let time_with_repeat = tuple.2;
+
+        match time_with_repeat {
+            Some(time_with_repeat) => vec.push(time_with_repeat),
+            None => break,
+        }
+    }
+
+    Ok((rem, next_n, vec))
 }
 
-fn parse_str_u64<'a>(
-    it: &mut impl Iterator<Item = &'a [u8]>,
-    line: usize,
-    field: &'static str,
-) -> Result<u64, ParserError> {
-    it.next()
-        .ok_or(ParserError::MissingField(line, field))
-        .and_then(|b| {
-            std::str::from_utf8(b).map_err(|_| ParserError::InvalidFieldEncoding(line, field))
-        })
-        .and_then(|s| {
-            s.parse()
-                .map_err(|_| ParserError::InvalidFieldFormat(line, field))
-        })
+#[allow(clippy::type_complexity)]
+fn parse_time_with_repeats(
+    line_number: usize,
+    input: &[u8],
+) -> Result<(&[u8], usize, Option<(Line, Vec<Line>)>), ParserError> {
+    let (rem, next_n, time) = parse_opt_line("t=", line_number, input, "Session time")?;
+
+    match time {
+        Some(time) => {
+            let (rem, next_n, repeat) = parse_multi0("r=", next_n, rem, "Session repeat")?;
+
+            Ok((rem, next_n, Some((time, repeat))))
+        }
+        None => Ok((rem, next_n, None)),
+    }
 }
 
-fn parse_str_opt<'a>(
-    it: &mut impl Iterator<Item = &'a [u8]>,
-    line: usize,
-    field: &'static str,
-) -> Result<Option<String>, ParserError> {
-    it.next()
-        .map(|b| {
-            std::str::from_utf8(b)
-                .map(String::from)
-                .map_err(|_| ParserError::InvalidFieldEncoding(line, field))
-        })
-        .transpose()
+fn parse_multi0<'a>(
+    prefix: &'static str,
+    line_number: usize,
+    input: &'a [u8],
+    error: &'static str,
+) -> Result<(&'a [u8], usize, Vec<Line<'a>>), ParserError> {
+    use nom::{bytes::complete::tag, multi::many0, sequence::preceded};
+
+    let (rem, emails) = many0(preceded(tag(prefix), take_till_line_end))(input)
+        .map_err(|_: NomError| ParserError::InvalidFieldFormat(line_number, error))?;
+
+    Ok((
+        rem,
+        line_number + emails.len(),
+        emails
+            .into_iter()
+            .enumerate()
+            .map(|(index, input)| (line_number + index, input).into())
+            .collect::<Vec<Line>>(),
+    ))
 }
 
-// Line parser helper for converting a byte slice to a string
-fn str_from_utf8(line: usize, s: &[u8], field: &'static str) -> Result<String, ParserError> {
-    std::str::from_utf8(s)
-        .map(String::from)
-        .map_err(|_| ParserError::InvalidFieldEncoding(line, field))
+fn parse_opt_line<'a>(
+    prefix: &'static str,
+    line_number: usize,
+    input: &'a [u8],
+    error: &'static str,
+) -> Result<(&'a [u8], usize, Option<Line<'a>>), ParserError> {
+    let (rem, version) = take_opt_line(prefix, input)
+        .map_err(|_: NomError| ParserError::InvalidFieldFormat(line_number, error))?;
+
+    match version {
+        Some(version) => Ok((
+            rem,
+            line_number + 1,
+            Some(Line::from((line_number, version))),
+        )),
+        None => Ok((rem, line_number, None)),
+    }
+}
+
+fn parse_line<'a>(
+    prefix: &'static str,
+    line_number: usize,
+    input: &'a [u8],
+    error: &'static str,
+) -> Result<(&'a [u8], usize, Line<'a>), ParserError> {
+    let (rem, version) = take_line(prefix, input)
+        .map_err(|_: NomError| ParserError::InvalidFieldFormat(line_number, error))?;
+
+    Ok((rem, line_number + 1, Line::from((line_number, version))))
+}
+
+fn take_line<'a>(
+    prefix: &'static str,
+    input: &'a [u8],
+) -> nom::IResult<&'a [u8], &'a [u8], nom::error::VerboseError<&'a [u8]>> {
+    use nom::{bytes::complete::tag, sequence::preceded};
+
+    preceded(tag(prefix), take_till_line_end)(input)
+}
+
+fn take_opt_line<'a>(
+    prefix: &'static str,
+    input: &'a [u8],
+) -> nom::IResult<&'a [u8], Option<&'a [u8]>, nom::error::VerboseError<&'a [u8]>> {
+    use nom::{bytes::complete::tag, combinator::opt, sequence::preceded};
+
+    opt(preceded(tag(prefix), take_till_line_end))(input)
+}
+
+fn take_till_line_end(input: &[u8]) -> nom::IResult<&[u8], &[u8], nom::error::VerboseError<&[u8]>> {
+    use nom::{
+        branch::alt,
+        bytes::complete::{tag, take_until},
+        sequence::terminated,
+    };
+
+    let (rem, line) = alt((
+        terminated(take_until("\r\n"), tag("\r\n")),
+        terminated(take_until("\r"), tag("\r")),
+        terminated(take_until("\n"), tag("\n")),
+    ))(input)?;
+
+    nom::IResult::Ok((rem, line))
 }
 
 struct Line<'item> {
     /// The 1-based line number.
     n: usize,
 
-    key: u8,
-
     value: &'item [u8],
 }
 
-// Parsing helper iterators below
-struct LineParser<'item, I: Iterator<Item = (usize, &'item [u8])>>(I);
-
-impl<'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator for LineParser<'item, I> {
-    type Item = Line<'item>;
-    type Error = ParserError;
-
-    fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
-        for (n, line) in &mut self.0 {
-            if line.is_empty() {
-                continue;
-            }
-            let equals = line.iter().position(|b| *b == b'=');
-            let key = match equals {
-                None => {
-                    return Err(ParserError::InvalidLineFormat(
-                        n,
-                        "Line not in key=value format",
-                    ))
-                }
-                Some(i) if i == 1 => line[0],
-                _ => {
-                    return Err(ParserError::InvalidLineFormat(
-                        n,
-                        "Line key not 1 character",
-                    ))
-                }
-            };
-            return Ok(Some(Line {
-                n,
-                key,
-                value: &line[2..],
-            }));
+impl<'item> From<(usize, &'item [u8])> for Line<'item> {
+    fn from(tuple: (usize, &'item [u8])) -> Self {
+        Self {
+            n: tuple.0,
+            value: tuple.1,
         }
-        Ok(None)
+    }
+}
+
+fn parse_str(it: &[u8], line: usize, field: &'static str) -> Result<String, ParserError> {
+    std::str::from_utf8(it)
+        .map(String::from)
+        .map_err(|_| ParserError::InvalidFieldEncoding(line, field))
+}
+
+fn parse_parsable<T>(it: &[u8], line: usize, field: &'static str) -> Result<T, ParserError>
+where
+    T: std::str::FromStr,
+{
+    std::str::from_utf8(it)
+        .map_err(|_| ParserError::InvalidFieldEncoding(line, field))
+        .and_then(|s| {
+            s.parse()
+                .map_err(|_| ParserError::InvalidFieldFormat(line, field))
+        })
+}
+
+fn take_until_time_unit(
+    input: &[u8],
+) -> nom::IResult<&[u8], &[u8], nom::error::VerboseError<&[u8]>> {
+    use nom::{branch::alt, bytes::complete::take_until, combinator::rest};
+
+    alt((
+        take_until("d"),
+        take_until("h"),
+        take_until("m"),
+        take_until("s"),
+        rest,
+    ))(input)
+}
+
+fn time_unit_to_sec(
+    input: &[u8],
+    line_number: usize,
+    descr: &'static str,
+) -> Result<u64, ParserError> {
+    match input {
+        b"d" => Ok(86_400),
+        b"h" => Ok(3_600),
+        b"m" => Ok(60),
+        b"s" => Ok(1),
+        b"" => Ok(1),
+        _ => Err(ParserError::InvalidFieldFormat(line_number, descr)),
+    }
+}
+
+fn parse_typed_time(
+    part: &[u8],
+    line_number: usize,
+    descr: &'static str,
+) -> Result<i64, ParserError> {
+    use nom::{bytes::complete::tag, combinator::opt, error::VerboseError};
+    use std::convert::TryInto;
+
+    let invalid_format_error =
+        |_: nom::Err<VerboseError<&[u8]>>| ParserError::InvalidFieldFormat(line_number, descr);
+
+    let (rem, sign) = opt(tag("-"))(part).map_err(invalid_format_error)?;
+    let (time_unit, period) = take_until_time_unit(rem).map_err(invalid_format_error)?;
+
+    let period: u64 = parse_parsable(period, line_number, descr)?;
+
+    let offset: i64 = (time_unit_to_sec(time_unit, line_number, descr)? * period)
+        .try_into()
+        .map_err(|_| ParserError::InvalidFieldFormat(line_number, descr))?;
+
+    match sign {
+        Some(_) => Ok(-offset),
+        None => Ok(offset),
     }
 }
 
@@ -712,213 +745,490 @@ impl<'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator for LineP
 mod tests {
     use super::*;
 
+    impl<'item> From<&'item [u8]> for Line<'item> {
+        fn from(input: &'item [u8]) -> Self {
+            Self { n: 1, value: input }
+        }
+    }
+
     #[test]
-    fn parse_sdp() {
-        let sdp = b"v=0\r
-o=jdoe 2890844526 2890842807 IN IP4 10.47.16.5\r
-s=SDP Seminar\r
-i=A Seminar on the session description protocol\r
-u=http://www.example.com/seminars/sdp.pdf\r
-e=j.doe@example.com (Jane Doe)\r
-p=+1 617 555-6011\r
-c=IN IP4 224.2.17.12/127\r
-b=AS:128\r
-t=2873397496 2873404696\r
-r=7d 1h 0 25h\r
-z=2882844526 -1h 2898848070 0\r
-k=clear:1234\r
-a=recvonly\r
-m=audio 49170 RTP/AVP 0\r
-m=video 51372/2 RTP/AVP 99\r
-a=rtpmap:99 h263-1998/90000\r
-a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA\r
-";
-        let parsed = Session::parse(&sdp[..]).unwrap();
-        let expected = Session {
-            origin: Origin {
+    fn parse_origin() {
+        let line = "- 3840284955 3840284955 IN IP4 192.168.0.30"
+            .as_bytes()
+            .into();
+        assert_eq!(
+            Origin::parse(line).unwrap(),
+            Origin {
+                username: None,
+                sess_id: "3840284955".into(),
+                sess_version: 3840284955,
+                nettype: "IN".into(),
+                addrtype: "IP4".into(),
+                unicast_address: "192.168.0.30".into(),
+            }
+        );
+
+        let line = "jdoe 2890844526 2890842807 IN IP6 ::ffff:c0a8:1e"
+            .as_bytes()
+            .into();
+
+        assert_eq!(
+            Origin::parse(line).unwrap(),
+            Origin {
                 username: Some("jdoe".into()),
                 sess_id: "2890844526".into(),
                 sess_version: 2890842807,
                 nettype: "IN".into(),
-                addrtype: "IP4".into(),
-                unicast_address: "10.47.16.5".into(),
-            },
-            session_name: "SDP Seminar".into(),
-            session_description: Some("A Seminar on the session description protocol".into()),
-            uri: Some("http://www.example.com/seminars/sdp.pdf".into()),
-            emails: vec!["j.doe@example.com (Jane Doe)".into()],
-            phones: vec!["+1 617 555-6011".into()],
-            connection: Some(Connection {
+                addrtype: "IP6".into(),
+                unicast_address: "::ffff:c0a8:1e".into(),
+            }
+        );
+
+        let line = "jdoe 2890844526 2890842807IN IP6 ::ffff:c0a8:1e"
+            .as_bytes()
+            .into();
+        assert!(Origin::parse(line).is_err());
+    }
+
+    #[test]
+    fn parse_connection() {
+        let line = "IN IP4 192.168.0.30".as_bytes().into();
+        assert_eq!(
+            Connection::parse(line).unwrap(),
+            Connection {
                 nettype: "IN".into(),
                 addrtype: "IP4".into(),
-                connection_address: "224.2.17.12/127".into(),
-            }),
-            bandwidths: vec![Bandwidth {
+                connection_address: "192.168.0.30".into()
+            }
+        );
+
+        let line = "IN IP6 ::ffff:c0a8:1e".as_bytes().into();
+        assert_eq!(
+            Connection::parse(line).unwrap(),
+            Connection {
+                nettype: "IN".into(),
+                addrtype: "IP6".into(),
+                connection_address: "::ffff:c0a8:1e".into()
+            }
+        );
+
+        let line = "IN IP6".as_bytes().into();
+        assert!(Connection::parse(line).is_err());
+    }
+
+    #[test]
+    fn parse_bandwidth() {
+        let line = "AS:128".as_bytes().into();
+        assert_eq!(
+            Bandwidth::parse(line).unwrap(),
+            Bandwidth {
                 bwtype: "AS".into(),
-                bandwidth: 128,
-            }],
-            times: vec![Time {
+                bandwidth: 128
+            }
+        );
+
+        let line = "X-YZ:256".as_bytes().into();
+        assert_eq!(
+            Bandwidth::parse(line).unwrap(),
+            Bandwidth {
+                bwtype: "X-YZ".into(),
+                bandwidth: 256
+            }
+        );
+
+        let line = "AS 128".as_bytes().into();
+        assert!(Bandwidth::parse(line).is_err());
+    }
+
+    #[test]
+    fn parse_time() {
+        let line = "2873397496 2873404696".as_bytes().into();
+        assert_eq!(
+            Time::parse(line).unwrap(),
+            Time {
+                start_time: 2873397496,
+                stop_time: 2873404696,
+                repeats: vec![]
+            }
+        );
+
+        let time_line = "2873397496 2873404696".as_bytes().into();
+        let repeat_line = "604800 3600 0 90000".as_bytes().into();
+        assert_eq!(
+            Time::parse_with_repeats(time_line, vec![repeat_line]).unwrap(),
+            Time {
                 start_time: 2873397496,
                 stop_time: 2873404696,
                 repeats: vec![Repeat {
                     repeat_interval: 604800,
                     active_duration: 3600,
-                    offsets: vec![0, 90000],
-                }],
-            }],
-            time_zones: vec![
+                    offsets: vec![0, 90000]
+                }]
+            }
+        );
+    }
+
+    #[test]
+    fn parse_repeat() {
+        let line = "604800 3600 0 90000".as_bytes().into();
+        assert_eq!(
+            Repeat::parse(line).unwrap(),
+            Repeat {
+                repeat_interval: 604800,
+                active_duration: 3600,
+                offsets: vec![0, 90000]
+            }
+        );
+
+        let line = "7d 1h 0 25h".as_bytes().into();
+        assert_eq!(
+            Repeat::parse(line).unwrap(),
+            Repeat {
+                repeat_interval: 604800,
+                active_duration: 3600,
+                offsets: vec![0, 90000]
+            }
+        );
+    }
+
+    #[test]
+    fn parse_timezones() {
+        let line = "2882844526 -2h".as_bytes().into();
+        assert_eq!(
+            TimeZone::parse(line).unwrap(),
+            vec![TimeZone {
+                adjustment_time: 2882844526,
+                offset: -(2 * 3_600)
+            }]
+        );
+
+        let line = "2882844526 -1h 2898848070 0".as_bytes().into();
+        assert_eq!(
+            TimeZone::parse(line).unwrap(),
+            vec![
                 TimeZone {
                     adjustment_time: 2882844526,
-                    offset: -3600,
+                    offset: -3_600
                 },
                 TimeZone {
                     adjustment_time: 2898848070,
-                    offset: 0,
-                },
-            ],
-            key: Some(Key {
+                    offset: 0
+                }
+            ]
+        );
+
+        let line = "2882844526 -2y".as_bytes().into();
+        assert!(TimeZone::parse(line).is_err());
+    }
+
+    #[test]
+    fn parse_attribute() {
+        let line = "sendrecv".as_bytes().into();
+        assert_eq!(
+            Attribute::parse(line).unwrap(),
+            Attribute {
+                attribute: "sendrecv".into(),
+                value: None
+            }
+        );
+
+        let line = "rtpmap:9 G722/8000".as_bytes().into();
+        assert_eq!(
+            Attribute::parse(line).unwrap(),
+            Attribute {
+                attribute: "rtpmap".into(),
+                value: Some("9 G722/8000".into())
+            }
+        );
+    }
+
+    #[test]
+    fn parse_key() {
+        let line = "prompt".as_bytes().into();
+        assert_eq!(
+            Key::parse(line).unwrap(),
+            Key {
+                method: "prompt".into(),
+                encryption_key: None
+            }
+        );
+
+        let line = "clear:1234".as_bytes().into();
+        assert_eq!(
+            Key::parse(line).unwrap(),
+            Key {
                 method: "clear".into(),
-                encryption_key: Some("1234".into()),
+                encryption_key: Some("1234".into())
+            }
+        );
+    }
+
+    #[test]
+    fn parse_media_all() {
+        let data = concat!(
+            "m=video 51372/2 RTP/AVP 99\r",
+            "i=A Seminar on the session description protocol\r",
+            "c=IN IP4 224.2.17.12/127\r",
+            "b=AS:128\r",
+            "k=clear:1234\r",
+            "a=rtpmap:99 h263-1998/90000\r",
+            "a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA\r"
+        )
+        .as_bytes();
+        let medias = Media::parse_all(1, data).unwrap();
+        assert_eq!(medias.first().cloned().unwrap(), Media {
+            media: "video".into(),
+            port: 51372,
+            num_ports: Some(2),
+            proto: "RTP/AVP".into(),
+            fmt: "99".into(),
+            media_title: Some("A Seminar on the session description protocol".into()),
+            connections: vec![Connection {
+                nettype: String::from("IN"),
+                addrtype: String::from("IP4"),
+                connection_address: String::from("224.2.17.12/127"),
+            }],
+            bandwidths: vec![Bandwidth {
+                bwtype: String::from("AS"),
+                bandwidth: 128,
+            }],
+            key: Some(Key {
+                method: String::from("clear"),
+                encryption_key: Some(String::from("1234")),
             }),
             attributes: vec![Attribute {
-                attribute: "recvonly".into(),
-                value: None,
+                attribute: String::from("rtpmap"),
+                value: Some(String::from("99 h263-1998/90000"))
+            }, Attribute {
+                attribute: String::from("fingerprint"),
+                value: Some(String::from("sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA"))
+            }]
+        });
+
+        let data = concat!(
+            "m=audio 49170 RTP/AVP 0\r",
+            "m=video 51372/2 RTP/AVP 99\r",
+            "i=A Seminar on the session description protocol\r",
+            "c=IN IP4 224.2.17.12/127\r",
+            "b=AS:128\r",
+            "k=clear:1234\r",
+            "a=rtpmap:99 h263-1998/90000\r",
+            "a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA\r"
+        )
+        .as_bytes();
+        let medias = Media::parse_all(1, data).unwrap();
+        assert_eq!(
+            medias.first().cloned().unwrap(),
+            Media {
+                media: "audio".into(),
+                port: 49170,
+                num_ports: None,
+                proto: "RTP/AVP".into(),
+                fmt: "0".into(),
+                media_title: None,
+                connections: vec![],
+                bandwidths: vec![],
+                key: None,
+                attributes: vec![]
+            }
+        );
+        assert_eq!(medias.last().cloned().unwrap(), Media {
+            media: "video".into(),
+            port: 51372,
+            num_ports: Some(2),
+            proto: "RTP/AVP".into(),
+            fmt: "99".into(),
+            media_title: Some("A Seminar on the session description protocol".into()),
+            connections: vec![Connection {
+                nettype: String::from("IN"),
+                addrtype: String::from("IP4"),
+                connection_address: String::from("224.2.17.12/127"),
             }],
+            bandwidths: vec![Bandwidth {
+                bwtype: String::from("AS"),
+                bandwidth: 128,
+            }],
+            key: Some(Key {
+                method: String::from("clear"),
+                encryption_key: Some(String::from("1234")),
+            }),
+            attributes: vec![Attribute {
+                attribute: String::from("rtpmap"),
+                value: Some(String::from("99 h263-1998/90000"))
+            }, Attribute {
+                attribute: String::from("fingerprint"),
+                value: Some(String::from("sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA"))
+            }]
+        });
+    }
+
+    #[test]
+    fn parse_media_single() {
+        let data = concat!(
+            "m=video 51372/2 RTP/AVP 99\r",
+            "i=A Seminar on the session description protocol\r",
+            "c=IN IP4 224.2.17.12/127\r",
+            "b=AS:128\r",
+            "k=clear:1234\r",
+            "a=rtpmap:99 h263-1998/90000\r",
+            "a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA\r"
+        )
+        .as_bytes();
+        let (rem, next_n, media) = Media::parse_single(1, data).unwrap();
+        assert_eq!(media, Media {
+            media: "video".into(),
+            port: 51372,
+            num_ports: Some(2),
+            proto: "RTP/AVP".into(),
+            fmt: "99".into(),
+            media_title: Some("A Seminar on the session description protocol".into()),
+            connections: vec![Connection {
+                nettype: String::from("IN"),
+                addrtype: String::from("IP4"),
+                connection_address: String::from("224.2.17.12/127"),
+            }],
+            bandwidths: vec![Bandwidth {
+                bwtype: String::from("AS"),
+                bandwidth: 128,
+            }],
+            key: Some(Key {
+                method: String::from("clear"),
+                encryption_key: Some(String::from("1234")),
+            }),
+            attributes: vec![Attribute {
+                attribute: String::from("rtpmap"),
+                value: Some(String::from("99 h263-1998/90000"))
+            }, Attribute {
+                attribute: String::from("fingerprint"),
+                value: Some(String::from("sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA"))
+            }]
+        });
+        assert_eq!(rem, "".as_bytes());
+        assert_eq!(next_n, 8);
+    }
+
+    #[test]
+    fn parse_media_m_line() {
+        let line = "audio 49170 RTP/AVP 0".as_bytes().into();
+        let media = Media::parse_m_line(line).unwrap();
+
+        assert_eq!(
+            media,
+            Media {
+                media: "audio".into(),
+                port: 49170,
+                num_ports: None,
+                proto: "RTP/AVP".into(),
+                fmt: "0".into(),
+                media_title: None,
+                connections: vec![],
+                bandwidths: vec![],
+                key: None,
+                attributes: vec![]
+            }
+        );
+
+        let line = "audio 50002 RTP/AVP 96 9 0 8 97 98 99 3 101 102 103 104"
+            .as_bytes()
+            .into();
+        let media = Media::parse_m_line(line).unwrap();
+        assert_eq!(
+            media,
+            Media {
+                media: "audio".into(),
+                port: 50002,
+                num_ports: None,
+                proto: "RTP/AVP".into(),
+                fmt: "96 9 0 8 97 98 99 3 101 102 103 104".into(),
+                media_title: None,
+                connections: vec![],
+                bandwidths: vec![],
+                key: None,
+                attributes: vec![]
+            }
+        );
+
+        let line = "video 49170/2 RTP/AVP 31".as_bytes().into();
+        let media = Media::parse_m_line(line).unwrap();
+        assert_eq!(
+            media,
+            Media {
+                media: "video".into(),
+                port: 49170,
+                num_ports: Some(2),
+                proto: "RTP/AVP".into(),
+                fmt: "31".into(),
+                media_title: None,
+                connections: vec![],
+                bandwidths: vec![],
+                key: None,
+                attributes: vec![]
+            }
+        );
+    }
+
+    #[test]
+    fn parse_session() {
+        let data = concat!(
+            "v=0\r",
+            "o=jdoe 2890844526 2890842807 IN IP4 10.47.16.5\r",
+            "s=SDP Seminar\r",
+            "i=A Seminar on the session description protocol\r",
+            "u=http://www.example.com/seminars/sdp.pdf\r",
+            "e=j.doe@example.com (Jane Doe)\r",
+            "p=+1 617 555-6011\r",
+            "c=IN IP4 224.2.17.12/127\r",
+            "b=AS:128\r",
+            "t=2873397496 2873404696\r",
+            "r=7d 1h 0 25h\r",
+            "t=0 0\r",
+            "z=2882844526 -1h 2898848070 0\r",
+            "k=clear:1234\r",
+            "a=recvonly\r"
+        );
+        let media1 = "m=audio 49170 RTP/AVP 0\r";
+        let media2 = concat!(
+            "m=video 51372/2 RTP/AVP 99\r",
+            "a=rtpmap:99 h263-1998/90000\r",
+            "a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA\r"
+        );
+        let data = format!("{}{}{}", data, media1, media2);
+        let session = Session::parse(&data.as_bytes()).unwrap();
+        let expected_session = Session {
+            origin: Origin::parse(
+                "jdoe 2890844526 2890842807 IN IP4 10.47.16.5"
+                    .as_bytes()
+                    .into(),
+            )
+            .unwrap(),
+            session_name: "SDP Seminar".into(),
+            session_description: Some("A Seminar on the session description protocol".into()),
+            uri: Some("http://www.example.com/seminars/sdp.pdf".into()),
+            emails: vec!["j.doe@example.com (Jane Doe)".into()],
+            phones: vec!["+1 617 555-6011".into()],
+            connection: Some(
+                Connection::parse("IN IP4 224.2.17.12/127".as_bytes().into()).unwrap(),
+            ),
+            bandwidths: vec![Bandwidth::parse("AS:128".as_bytes().into()).unwrap()],
+            times: vec![
+                Time::parse_with_repeats(
+                    "2873397496 2873404696".as_bytes().into(),
+                    vec!["7d 1h 0 25h".as_bytes().into()],
+                )
+                .unwrap(),
+                Time::parse("0 0".as_bytes().into()).unwrap(),
+            ],
+            time_zones: TimeZone::parse("2882844526 -1h 2898848070 0".as_bytes().into()).unwrap(),
+            key: Some(Key::parse("clear:1234".as_bytes().into()).unwrap()),
+            attributes: vec![Attribute::parse("recvonly".as_bytes().into()).unwrap()],
             medias: vec![
-                Media {
-                    media: "audio".into(),
-                    port: 49170,
-                    num_ports: None,
-                    proto: "RTP/AVP".into(),
-                    fmt: "0".into(),
-                    media_title: None,
-                    connections: vec![],
-                    bandwidths: vec![],
-                    key: None,
-                    attributes: vec![],
-                },
-                Media {
-                    media: "video".into(),
-                    port: 51372,
-                    num_ports: Some(2),
-                    proto: "RTP/AVP".into(),
-                    fmt: "99".into(),
-                    media_title: None,
-                    connections: vec![],
-                    bandwidths: vec![],
-                    key: None,
-                    attributes: vec![
-                        Attribute {
-                            attribute: "rtpmap".into(),
-                            value: Some("99 h263-1998/90000".into()),
-                        },
-                        Attribute {
-                            attribute: "fingerprint".into(),
-                            value: Some("sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA".into()),
-                        }
-                    ],
-                },
+                Media::parse_single(1, media1.as_bytes()).unwrap().2,
+                Media::parse_single(1, media2.as_bytes()).unwrap().2,
             ],
         };
+        assert_eq!(session, expected_session);
 
-        assert_eq!(parsed, expected);
-    }
-
-    #[test]
-    fn parse_only_key() {
-        Session::parse(b"v\n").unwrap_err();
-    }
-
-    #[test]
-    fn unexpected_line_err() {
-        match Session::parse(b"v=0\r\n*=asdf\r\n") {
-            Err(ParserError::UnexpectedLine(line, c)) => {
-                assert_eq!(line, 2);
-                assert_eq!(c, b'*');
-            }
-            o => panic!("bad result: {:#?}", o),
-        }
-    }
-
-    #[test]
-    fn parse_sdp_real_camera() {
-        let sdp = b"v=0\r
-o=VSTC 3828747520 3828747520 IN IP4 192.168.1.165\r
-s=streamed by the VSTARCAM RTSP server\r
-e=NONE\r
-c=IN IP4 0.0.0.0\r
-t=0 0\r
-m=video 0 RTP/AVP 96\r
-b=AS:1024\r
-a=control:track0\r
-a=rtpmap:96 H264/90000\r
-a=fmtp:96 packetization-mode=1;profile-level-id=4d001f;sprop-parameter-sets=Z00AH52oFAFum4CAgKAAAAMAIAAAAwHwgA==,aO48gA==\r
-m=audio 0 RTP/AVP 8	 \r
-b=AS:64\r
-a=control:track1\r
-a=rtpmap:8 PCMA/8000/1\r
-
-";
-        let _parsed = Session::parse(&sdp[..]).unwrap();
-    }
-
-    /// Parses SDP from a Geovision camera which (incorrectly) omits the "t="
-    /// line.
-    #[test]
-    fn parse_sdp_geovision() {
-        let sdp = b"v=0\r
-o=- 1001 1 IN IP4 192.168.5.237\r
-s=VCP IPC Realtime stream\r
-m=video 0 RTP/AVP 105\r
-c=IN IP4 192.168.5.237\r
-a=control:rtsp://192.168.5.237/media/video1/video\r
-a=rtpmap:105 H264/90000\r
-a=fmtp:105 profile-level-id=4d4032; packetization-mode=1; sprop-parameter-sets=Z01AMpWgCoAwfiZuAgICgAAB9AAAdTBC,aO48gA==\r
-a=recvonly\r
-m=application 0 RTP/AVP 107\r
-c=IN IP4 192.168.5.237\r
-a=control:rtsp://192.168.5.237/media/video1/metadata\r
-a=rtpmap:107 vnd.onvif.metadata/90000\r
-a=fmtp:107 DecoderTag=h3c-v3 RTCP=0\r
-a=recvonly\r
-";
-        let _parsed = Session::parse(&sdp[..]).unwrap();
-    }
-
-    /// Parses SDP from an Anpviz camera which (incorrectly) places an `a=`
-    /// between the `c=` and `t=` lines of a session.
-    #[test]
-    fn parse_sdp_anpviz() {
-        let sdp = b"v=0\r
-o=- 1109162014219182 1109162014219192 IN IP4 x.y.z.w\r
-s=RTSP/RTP stream from anjvision ipcamera\r
-e=NONE\r
-c=IN IP4 0.0.0.0\r
-a=tool:LIVE555 Streaming Media v2011.05.25 CHAM.LI@ANJVISION.COM\r
-t=0 0\r
-a=range:npt=0-\r
-a=control:*\r
-m=video 0 RTP/AVP 96\r
-a=rtpmap:96 H264/90000\r
-a=control:trackID=1\r
-a=fmtp:96 profile-level-id=4D401F;packetization-mode=0;sprop-parameter-sets=Z01AH5WgLASabAQ=,aO48gA==;config=00000001674d401f95a02c049a6c040000000168ee3c800000000106f02c0445c6f5000620ebc2f3f7639e48250bfcb561bb2b85dda6fe5f06cc8b887b6a915f5aa3bebfffffffffff7380\r
-a=x-dimensions: 704, 576\r
-a=x-framerate: 12\r
-m=audio 0 RTP/AVP 0\r
-a=rtpmap:0 MPEG4-GENERIC/16000/2\r
-a=fmtp:0 config=1408\r
-a=control:trackID=2\r
-a=Media_header:MEDIAINFO=494D4B48010100000400010010710110401F000000FA000000000000000000000000000000000000;\r
-a=appversion:1.0\r
-";
-        let _parsed = Session::parse(&sdp[..]).unwrap();
-    }
-
-    #[test]
-    fn parse_overflowing_time() {
-        assert_eq!(
-            Session::parse(b"v=0\no=  0  =\x00 \ns=q\nt=0 5\nz=00 666666000079866660m "),
-            Err(ParserError::InvalidFieldFormat(5, "TimeZone offset"))
-        );
+        let data = format!("{}{}{}\rv=1234\r", data, media1, media2);
+        assert!(Session::parse(&data.as_bytes()).is_err())
     }
 }
