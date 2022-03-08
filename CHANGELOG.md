@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html),
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
+## [0.1.4] - 2022-03-08
+### Changed
+- Support parsing SDPs without `o=` lines by creating a dummy `Origin` value.
+
 ## [0.1.3] - 2021-09-09
 ### Fixed
 - Use 1-based line numbers in errors.
