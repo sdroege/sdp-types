@@ -30,6 +30,7 @@ pub enum ParserError {
     /// A second origin line was found at the given line.
     MultipleOrigins(usize),
     /// The SDP did not contain an origin line.
+    #[deprecated(note = "This is no longer considered an error.")]
     NoOrigin,
     /// A second session name line was found at the given line.
     MultipleSessionNames(usize),
@@ -85,6 +86,7 @@ impl std::fmt::Display for ParserError {
             ParserError::MultipleVersions(line) => write!(f, "Multiple versions in line {}", line),
             ParserError::NoVersion => write!(f, "No version line"),
             ParserError::MultipleOrigins(line) => write!(f, "Multiple origins in line {}", line),
+            #[allow(deprecated)]
             ParserError::NoOrigin => write!(f, "No origin line"),
             ParserError::MultipleSessionNames(line) => {
                 write!(f, "Multiple session-names in line {}", line)
@@ -436,7 +438,7 @@ impl Session {
         //   "m=" starts the media descriptions. Other fields can come in
         //   almost any order. "r=" refers to the most recent "t=", even if it's
         //   not the most recent line.
-        // - allow "t=" line to be missing.
+        // - allow "o=" and "t=" lines to be missing.
 
         // Check version line, which we expect to come first.
         match lines.next()? {
@@ -468,7 +470,7 @@ impl Session {
             let line = lines.next().unwrap().unwrap();
             match line.key {
                 // Parse origin line:
-                // - Must only exist exactly once (see check following the loop)
+                // - Must only exist once or not at all
                 b'o' => parse_rejecting_duplicates(
                     &mut origin,
                     &line,
@@ -562,7 +564,14 @@ impl Session {
             }
         }
 
-        let origin = origin.ok_or(ParserError::NoOrigin)?;
+        let origin = origin.unwrap_or_else(|| Origin {
+            username: None,
+            sess_id: String::new(),
+            sess_version: 0,
+            nettype: String::new(),
+            addrtype: String::new(),
+            unicast_address: String::new(),
+        });
         let session_name = session_name.ok_or(ParserError::NoSessionName)?;
 
         let time_zones = time_zones.unwrap_or_default();
@@ -920,5 +929,23 @@ a=appversion:1.0\r
             Session::parse(b"v=0\no=  0  =\x00 \ns=q\nt=0 5\nz=00 666666000079866660m "),
             Err(ParserError::InvalidFieldFormat(5, "TimeZone offset"))
         );
+    }
+
+    #[test]
+    fn parse_sdp_without_origin() {
+        let sdp = b"v=0\r
+s=streamed by the macro-video rtsp server\r
+t=0 0\r
+a=control:*\r
+a=range:npt=0-\r
+a=x-qt-text-nam:streamed by the macro-video rtsp server\r
+c=IN IP4 0.0.0.0\r
+m=video 0 RTP/AVP 96\r
+b=AS:500\r
+a=rtpmap:96 H264/90000\r
+a=fmtp:96 profile-level-id=TeAo;packetization-mode=1;sprop-parameter-sets=J03gKI1oBQBboQAAAwABAAADACgPFCKg,KO4BNJI=\r
+a=control:track1\r
+";
+        let _parsed = Session::parse(&sdp[..]).unwrap();
     }
 }
