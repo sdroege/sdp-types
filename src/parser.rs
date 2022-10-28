@@ -81,7 +81,7 @@ impl std::fmt::Display for ParserError {
                 f,
                 "Invalid version at line {}: {}",
                 line,
-                String::from_utf8_lossy(&*s)
+                String::from_utf8_lossy(s)
             ),
             ParserError::MultipleVersions(line) => write!(f, "Multiple versions in line {}", line),
             ParserError::NoVersion => write!(f, "No version line"),
@@ -253,7 +253,7 @@ impl TimeZone {
                 .and_then(|s| {
                     use std::convert::TryInto;
 
-                    let (sign, s) = if s.get(0) == Some(&b'-') {
+                    let (sign, s) = if s.first() == Some(&b'-') {
                         (true, &s[1..])
                     } else {
                         (false, s)
