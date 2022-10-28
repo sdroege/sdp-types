@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html),
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
+## [0.1.5] - 2022-10-28
+### Changed
+- Fix some clippy warnings.
+- Update to `bstr` 1.0.
+
 ## [0.1.4] - 2022-03-08
 ### Changed
 - Support parsing SDPs without `o=` lines by creating a dummy `Origin` value.
@@ -36,7 +41,9 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ## 0.1.0 - 2019-12-23
 - Initial release of the `sdp-types` crate.
 
-[Unreleased]: https://github.com/sdroege/sdp-types/compare/0.1.3...HEAD
+[Unreleased]: https://github.com/sdroege/sdp-types/compare/0.1.4...HEAD
+[0.1.5]: https://github.com/sdroege/sdp-types/compare/0.1.4...0.1.5
+[0.1.4]: https://github.com/sdroege/sdp-types/compare/0.1.3...0.1.4
 [0.1.3]: https://github.com/sdroege/sdp-types/compare/0.1.2...0.1.3
 [0.1.2]: https://github.com/sdroege/sdp-types/compare/0.1.1...0.1.2
 [0.1.1]: https://github.com/sdroege/sdp-types/compare/0.1.0...0.1.1
