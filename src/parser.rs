@@ -36,6 +36,7 @@ pub enum ParserError {
     /// A second session name line was found at the given line.
     MultipleSessionNames(usize),
     /// The SDP did not contain a session name line.
+    #[deprecated(note = "This is no longer considered an error.")]
     NoSessionName,
     /// A second session description line was found at the given line.
     MultipleSessionDescription(usize),
@@ -93,6 +94,7 @@ impl std::fmt::Display for ParserError {
             ParserError::MultipleSessionNames(line) => {
                 write!(f, "Multiple session-names in line {}", line)
             }
+            #[allow(deprecated)]
             ParserError::NoSessionName => write!(f, "No session-name line"),
             ParserError::MultipleSessionDescription(line) => {
                 write!(f, "Multiple session-information in line {}", line)
@@ -442,7 +444,7 @@ impl Session {
         //   "m=" starts the media descriptions. Other fields can come in
         //   almost any order. "r=" refers to the most recent "t=", even if it's
         //   not the most recent line.
-        // - allow "o=" and "t=" lines to be missing.
+        // - allow "o=", "t=" and "s=" lines to be missing.
 
         // Check version line, which we expect to come first.
         match lines.next()? {
@@ -483,7 +485,7 @@ impl Session {
                 )?,
 
                 // Parse session name line:
-                // - Must only exist exactly once (see check following the loop)
+                // - Must only exist once or not at all
                 b's' => parse_rejecting_duplicates(
                     &mut session_name,
                     &line,
@@ -575,7 +577,7 @@ impl Session {
             addrtype: String::new(),
             unicast_address: String::new(),
         });
-        let session_name = session_name.ok_or(ParserError::NoSessionName)?;
+        let session_name = session_name.unwrap_or_default();
 
         let time_zones = time_zones.unwrap_or_default();
 
@@ -956,6 +958,24 @@ a=framerate:15.000\r
 a=control:rtsp://192.168.1.20/camera1.sdp\r
 c=IN IP4 0.0.0.0\r
 t=0 0\r
+";
+        let _parsed = Session::parse(&sdp[..]).unwrap();
+    }
+
+    #[test]
+    fn parse_sdp_without_session_name() {
+        let sdp = b"v=0\r
+o=- 1109162014219182 1109162014219192 IN IP4 x.y.z.w\r
+t=0 0\r
+a=control:*\r
+a=range:npt=0-\r
+a=x-qt-text-nam:streamed by the macro-video rtsp server\r
+c=IN IP4 0.0.0.0\r
+m=video 0 RTP/AVP 96\r
+b=AS:500\r
+a=rtpmap:96 H264/90000\r
+a=fmtp:96 profile-level-id=TeAo;packetization-mode=1;sprop-parameter-sets=J03gKI1oBQBboQAAAwABAAADACgPFCKg,KO4BNJI=\r
+a=control:track1\r
 ";
         let _parsed = Session::parse(&sdp[..]).unwrap();
     }
