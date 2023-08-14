@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html),
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
+## unreleased
+### Changed
+- Ignore unexpected SDP lines.
+
 ## [0.1.5] - 2022-10-28
 ### Changed
 - Fix some clippy warnings.
