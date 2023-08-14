@@ -10,6 +10,7 @@ use super::*;
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParserError {
     /// The given line started with an unexpected character.
+    #[deprecated(note = "This is no longer considered an error.")]
     UnexpectedLine(usize, u8),
     /// The given line was not formatted correctly.
     InvalidLineFormat(usize, &'static str),
@@ -57,6 +58,7 @@ impl std::fmt::Display for ParserError {
         use std::convert::TryFrom;
 
         match *self {
+            #[allow(deprecated)]
             ParserError::UnexpectedLine(line, c) => {
                 if let Ok(c) = char::try_from(c as u32) {
                     write!(f, "Unexpected line {} starting with '{}'", line, c)
@@ -366,8 +368,10 @@ impl Media {
     ) -> Result<Option<Media>, ParserError> {
         let media = match lines.next()? {
             None => return Ok(None),
-            Some(line) if line.key == b'm' => Media::parse_m_line(&line)?,
-            Some(line) => return Err(ParserError::UnexpectedLine(line.n, line.key)),
+            Some(line) => {
+                assert_eq!(line.key, b'm');
+                Media::parse_m_line(&line)?
+            }
         };
 
         // As with Session::parse, be more permissive about order than RFC 8866.
@@ -410,7 +414,7 @@ impl Media {
                 // - Can exist not at all, once or multiple times
                 b'a' => attributes.push(Attribute::parse(&line)?),
 
-                o => return Err(ParserError::UnexpectedLine(line.n, o)),
+                _ => (),
             }
         }
 
@@ -532,10 +536,9 @@ impl Session {
                 // Parse repeat lines
                 // - Can exist not at all, once or multiple times
                 b'r' => {
-                    let t = times
-                        .last_mut()
-                        .ok_or(ParserError::UnexpectedLine(line.n, b't'))?;
-                    t.repeats.push(Repeat::parse(&line)?);
+                    if let Some(t) = times.last_mut() {
+                        t.repeats.push(Repeat::parse(&line)?);
+                    }
                 }
 
                 // Parse zones line:
@@ -560,7 +563,7 @@ impl Session {
                 // - Can exist not at all, once or multiple times
                 b'a' => attributes.push(Attribute::parse(&line)?),
 
-                o => return Err(ParserError::UnexpectedLine(line.n, o)),
+                _ => (),
             }
         }
 
@@ -839,17 +842,6 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
     }
 
     #[test]
-    fn unexpected_line_err() {
-        match Session::parse(b"v=0\r\n*=asdf\r\n") {
-            Err(ParserError::UnexpectedLine(line, c)) => {
-                assert_eq!(line, 2);
-                assert_eq!(c, b'*');
-            }
-            o => panic!("bad result: {:#?}", o),
-        }
-    }
-
-    #[test]
     fn parse_sdp_real_camera() {
         let sdp = b"v=0\r
 o=VSTC 3828747520 3828747520 IN IP4 192.168.1.165\r
@@ -945,6 +937,25 @@ b=AS:500\r
 a=rtpmap:96 H264/90000\r
 a=fmtp:96 profile-level-id=TeAo;packetization-mode=1;sprop-parameter-sets=J03gKI1oBQBboQAAAwABAAADACgPFCKg,KO4BNJI=\r
 a=control:track1\r
+";
+        let _parsed = Session::parse(&sdp[..]).unwrap();
+    }
+
+    #[test]
+    fn parse_sdp_data_after_media() {
+        let sdp = b"v=0\r
+o=- 1691154453 1 IN IP4 192.168.1.100\r
+i=Pagos\r
+a=type:broadcast\r
+s=RandD2\r
+m=video 15002 RTP/AVP 97\r
+a=range:npt=0-\r
+a=rtpmap:97 H264/90000\r
+a=fmtp:97 profile-level-id=4D4029; packetization-mode=1; sprop-parameter-sets=Z01AKZZUBQHsgA==,aO44gA==\r
+a=framerate:15.000\r
+a=control:rtsp://192.168.1.20/camera1.sdp\r
+c=IN IP4 0.0.0.0\r
+t=0 0\r
 ";
         let _parsed = Session::parse(&sdp[..]).unwrap();
     }
