@@ -12,4 +12,4 @@ readme = "README.md"
 
 [dependencies]
 bstr = "1"
-fallible-iterator = "0.2"
+fallible-iterator = "0.3"
