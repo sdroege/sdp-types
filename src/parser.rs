@@ -520,7 +520,7 @@ impl Session {
 
                 // Parse connection line:
                 // - Can exist not at all or exactly once per session
-                b'c' => parse_rejecting_duplicates(
+                b'c' => parse_skipping_duplicates(
                     &mut connection,
                     &line,
                     ParserError::MultipleConnections,
@@ -618,6 +618,24 @@ fn parse_rejecting_duplicates<
 ) -> Result<(), ParserError> {
     if value.is_some() {
         return Err(duplicate_error_fn(line.n));
+    }
+    *value = Some(parser(line)?);
+    Ok(())
+}
+
+fn parse_skipping_duplicates<
+    T,
+    E: Fn(usize) -> ParserError,
+    P: Fn(&Line) -> Result<T, ParserError>,
+>(
+    value: &mut Option<T>,
+    line: &Line<'_>,
+    duplicate_error_fn: E,
+    parser: P,
+) -> Result<(), ParserError> {
+    if value.is_some() {
+        let _ = parser(line)?;
+        return Ok(())
     }
     *value = Some(parser(line)?);
     Ok(())
