@@ -704,7 +704,7 @@ impl<'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator for LineP
                         "Line not in key=value format",
                     ))
                 }
-                Some(i) if i == 1 => line[0],
+                Some(1) => line[0],
                 _ => {
                     return Err(ParserError::InvalidLineFormat(
                         n,
