@@ -5,9 +5,11 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html),
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
-## unreleased
+## [0.1.6] - 2024-02-14
 ### Changed
 - Ignore unexpected SDP lines.
+- Declare 1.65 as MSRV.
+- Don't enable default features of `bstr` to reduce dependencies considerably.
 
 ## [0.1.5] - 2022-10-28
 ### Changed
@@ -45,7 +47,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ## 0.1.0 - 2019-12-23
 - Initial release of the `sdp-types` crate.
 
-[Unreleased]: https://github.com/sdroege/sdp-types/compare/0.1.4...HEAD
+[Unreleased]: https://github.com/sdroege/sdp-types/compare/0.1.6...HEAD
+[0.1.6]: https://github.com/sdroege/sdp-types/compare/0.1.5...0.1.6
 [0.1.5]: https://github.com/sdroege/sdp-types/compare/0.1.4...0.1.5
 [0.1.4]: https://github.com/sdroege/sdp-types/compare/0.1.3...0.1.4
 [0.1.3]: https://github.com/sdroege/sdp-types/compare/0.1.2...0.1.3
