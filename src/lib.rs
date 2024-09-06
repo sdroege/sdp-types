@@ -55,6 +55,7 @@ pub use parser::ParserError;
 ///
 /// See [RFC 4566 Section 5.2](https://tools.ietf.org/html/rfc4566#section-5.2) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Origin {
     /// User's login on the originating host.
     pub username: Option<String>,
@@ -76,6 +77,7 @@ pub struct Origin {
 ///
 /// See [RFC 4566 Section 5.7](https://tools.ietf.org/html/rfc4566#section-5.7) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Connection {
     /// Type of network for this connection.
     pub nettype: String,
@@ -89,6 +91,7 @@ pub struct Connection {
 ///
 /// See [RFC 4566 Section 5.8](https://tools.ietf.org/html/rfc4566#section-5.8) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Bandwidth {
     /// Bandwidth type, usually "CT" or "AS".
     pub bwtype: String,
@@ -100,6 +103,7 @@ pub struct Bandwidth {
 ///
 /// See [RFC 4566 Section 5.9](https://tools.ietf.org/html/rfc4566#section-5.9) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Time {
     /// Start time of the session in seconds since 1900.
     pub start_time: u64,
@@ -113,6 +117,7 @@ pub struct Time {
 ///
 /// See [RFC 4566 Section 5.10](https://tools.ietf.org/html/rfc4566#section-5.10) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Repeat {
     /// Repeat interval in seconds.
     pub repeat_interval: u64,
@@ -126,6 +131,7 @@ pub struct Repeat {
 ///
 /// See [RFC 4566 Section 5.11](https://tools.ietf.org/html/rfc4566#section-5.11) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TimeZone {
     /// Time in seconds since 1900 when the adjustment happens.
     pub adjustment_time: u64,
@@ -137,6 +143,7 @@ pub struct TimeZone {
 ///
 /// See [RFC 4566 Section 5.12](https://tools.ietf.org/html/rfc4566#section-5.12) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Key {
     /// Encryption method that is used.
     pub method: String,
@@ -148,6 +155,7 @@ pub struct Key {
 ///
 /// See [RFC 4566 Section 5.13](https://tools.ietf.org/html/rfc4566#section-5.13) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Attribute {
     /// Attribute name.
     pub attribute: String,
@@ -159,6 +167,7 @@ pub struct Attribute {
 ///
 /// See [RFC 4566 Section 5.14](https://tools.ietf.org/html/rfc4566#section-5.14) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Media {
     /// Media type, e.g. "audio", "video", "text", "application" or "message".
     pub media: String,
@@ -186,6 +195,7 @@ pub struct Media {
 ///
 /// See [RFC 4566 Section 5](https://tools.ietf.org/html/rfc4566#section-5) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Session {
     /// Originator of the session.
     pub origin: Origin,
