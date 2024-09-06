@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html),
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
+## [0.1.7] - 2024-09-06
+### Added
+- Add serde-derived `Serialize` / `Deserialize` implementations behind a
+  feature flag.
+
 ## [0.1.6] - 2024-02-14
 ### Changed
 - Ignore unexpected SDP lines.
@@ -47,7 +52,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ## 0.1.0 - 2019-12-23
 - Initial release of the `sdp-types` crate.
 
-[Unreleased]: https://github.com/sdroege/sdp-types/compare/0.1.6...HEAD
+[Unreleased]: https://github.com/sdroege/sdp-types/compare/0.1.7...HEAD
+[0.1.7]: https://github.com/sdroege/sdp-types/compare/0.1.6...0.1.7
 [0.1.6]: https://github.com/sdroege/sdp-types/compare/0.1.5...0.1.6
 [0.1.5]: https://github.com/sdroege/sdp-types/compare/0.1.4...0.1.5
 [0.1.4]: https://github.com/sdroege/sdp-types/compare/0.1.3...0.1.4
