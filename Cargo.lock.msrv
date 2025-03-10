@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "sdp-types"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "bstr",
  "fallible-iterator",
