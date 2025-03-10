@@ -43,6 +43,7 @@ pub enum ParserError {
     /// A second URI line was found at the given line.
     MultipleUris(usize),
     /// A second connection line was found at the given line.
+    #[deprecated(note = "This is no longer considered an error.")]
     MultipleConnections(usize),
     /// A second time zone line was found at the given line.
     MultipleTimeZones(usize),
@@ -100,6 +101,7 @@ impl std::fmt::Display for ParserError {
                 write!(f, "Multiple session-information in line {}", line)
             }
             ParserError::MultipleUris(line) => write!(f, "Multiple URIs in line {}", line),
+            #[allow(deprecated)]
             ParserError::MultipleConnections(line) => {
                 write!(f, "Multiple connections in line {}", line)
             }
@@ -520,12 +522,7 @@ impl Session {
 
                 // Parse connection line:
                 // - Can exist not at all or exactly once per session
-                b'c' => parse_rejecting_duplicates(
-                    &mut connection,
-                    &line,
-                    ParserError::MultipleConnections,
-                    Connection::parse,
-                )?,
+                b'c' => parse_skipping_duplicates(&mut connection, &line, Connection::parse)?,
 
                 // Parse bandwidth lines:
                 // - Can exist not at all, once or multiple times
@@ -618,6 +615,19 @@ fn parse_rejecting_duplicates<
 ) -> Result<(), ParserError> {
     if value.is_some() {
         return Err(duplicate_error_fn(line.n));
+    }
+    *value = Some(parser(line)?);
+    Ok(())
+}
+
+fn parse_skipping_duplicates<T, P: Fn(&Line) -> Result<T, ParserError>>(
+    value: &mut Option<T>,
+    line: &Line<'_>,
+    parser: P,
+) -> Result<(), ParserError> {
+    if value.is_some() {
+        let _ = parser(line)?;
+        return Ok(());
     }
     *value = Some(parser(line)?);
     Ok(())
