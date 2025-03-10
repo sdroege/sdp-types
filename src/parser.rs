@@ -175,7 +175,7 @@ impl Bandwidth {
 impl Time {
     fn parse(line: &Line) -> Result<Time, ParserError> {
         // <start-time> <stop-time>
-        let mut time = line.value.split_str(b" ");
+        let mut time = line.value.split_str(b" ").filter(|part| !part.is_empty());
         let start_time = parse_str_u64(&mut time, line.n, "Time start-time")?;
         let stop_time = parse_str_u64(&mut time, line.n, "Time stop-time")?;
         if time.next().is_some() {
@@ -214,7 +214,7 @@ fn parse_typed_time(s: &[u8], line: usize, field: &'static str) -> Result<u64, P
 impl Repeat {
     fn parse(line: &Line) -> Result<Repeat, ParserError> {
         // <repeat interval> <active duration> <offsets from start-time>
-        let mut repeat = line.value.split_str(b" ");
+        let mut repeat = line.value.split_str(b" ").filter(|part| !part.is_empty());
         let repeat_interval = repeat
             .next()
             .ok_or(ParserError::MissingField(line.n, "Repeat repeat-interval"))
@@ -239,7 +239,7 @@ impl Repeat {
 impl TimeZone {
     fn parse(line: &Line) -> Result<Vec<TimeZone>, ParserError> {
         // <adjustment time> <offset> <adjustment time> <offset> ....
-        let mut zones = line.value.split_str(b" ");
+        let mut zones = line.value.split_str(b" ").filter(|part| !part.is_empty());
 
         let mut ret = Vec::new();
         loop {
@@ -976,6 +976,21 @@ b=AS:500\r
 a=rtpmap:96 H264/90000\r
 a=fmtp:96 profile-level-id=TeAo;packetization-mode=1;sprop-parameter-sets=J03gKI1oBQBboQAAAwABAAADACgPFCKg,KO4BNJI=\r
 a=control:track1\r
+";
+        let _parsed = Session::parse(&sdp[..]).unwrap();
+    }
+
+    #[test]
+    fn parse_sdp_with_trailing_spaces() {
+        // Obtained from a camera integrated into Elegoo Saturn 4 Ultra
+        // Notice the trailing space in "t" field
+        let sdp = b"v=0\r
+o=- 4922720 1 IN IP4 10.0.0.108\r
+t=0 0 \r
+a=control:*\r
+m=video 0 RTP/AVP 96\r
+a=rtpmap:96 H264/9000\r
+a=control:track0\r
 ";
         let _parsed = Session::parse(&sdp[..]).unwrap();
     }
