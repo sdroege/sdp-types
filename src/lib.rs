@@ -2,7 +2,7 @@
 //
 // Licensed under the MIT license, see the LICENSE file or <http://opensource.org/licenses/MIT>
 
-//! Crate for handling SDP ([RFC 4566](https://tools.ietf.org/html/rfc4566))
+//! Crate for handling SDP ([RFC 8866](https://tools.ietf.org/html/rfc8866))
 //! session descriptions, including a parser and serializer.
 //!
 //! ## Serializing an SDP
@@ -43,6 +43,12 @@
 //!    are currently parsed as a plain string and not according to the SDP
 //!    grammar.
 
+use std::{
+    fmt::Display,
+    net::{AddrParseError, IpAddr},
+    str::FromStr,
+};
+
 use bstr::*;
 use fallible_iterator::FallibleIterator;
 
@@ -51,9 +57,306 @@ mod writer;
 
 pub use parser::ParserError;
 
+/// Errors while parsing strings to Enum
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ParseEnumError {
+    Invalid(String),
+}
+
+/// Type of network of the originator or a connection of the session.
+///
+/// See [RFC 8866 Section 5.2](https://tools.ietf.org/html/rfc8866#section-5.2),
+/// [RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7) and
+/// [RFC 8866 Section 8.2.6](https://datatracker.ietf.org/doc/html/rfc8866#section-8.2.6) for more details
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum NetType {
+    /// Internet
+    In,
+    /// Telephone Network
+    Tn,
+    /// ATM Bearer Connection
+    Atm,
+    /// Public Switched Telephone Network
+    Pstn,
+}
+
+impl NetType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NetType::In => "IN",
+            NetType::Tn => "TN",
+            NetType::Atm => "ATM",
+            NetType::Pstn => "PSTN",
+        }
+    }
+}
+
+impl FromStr for NetType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "IN" => Ok(NetType::In),
+            "TN" => Ok(NetType::Tn),
+            "ATM" => Ok(NetType::Atm),
+            "PSTN" => Ok(NetType::Pstn),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
+        }
+    }
+}
+
+impl Display for NetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Type of address of the originator or a connection of the session
+///
+/// See [RFC 8866 Section 5.2](https://tools.ietf.org/html/rfc8866#section-5.2),
+/// [RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum AddrType {
+    /// IPv4 address
+    Ip4,
+    /// Ipv6 address
+    Ip6,
+}
+
+impl AddrType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AddrType::Ip4 => "IP4",
+            AddrType::Ip6 => "IP6",
+        }
+    }
+}
+
+impl FromStr for AddrType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "IP4" => Ok(AddrType::Ip4),
+            "IP6" => Ok(AddrType::Ip6),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
+        }
+    }
+}
+
+impl Display for AddrType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Type of the Bandwidth value.
+///
+/// See [RFC 8866 Section 5.8](https://tools.ietf.org/html/rfc8866#section-5.8) for more details.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum BwType {
+    /// Conference total - maximum bandwith a session will use
+    Ct,
+    /// Application Specific maximum bandwidth
+    As,
+    /// Bandwidth assigned for RTCP reports by active senders. See [RFC 3890 Section 1.1.3](https://datatracker.ietf.org/doc/html/rfc3890#section-1.1.3)
+    Rr,
+    /// Bandwidth assigned for RTCP reports by active receivers. See [RFC 3890 Section 1.1.3](https://datatracker.ietf.org/doc/html/rfc3890#section-1.1.3)
+    Rs,
+}
+
+impl BwType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BwType::As => "AS",
+            BwType::Ct => "CT",
+            BwType::Rr => "RR",
+            BwType::Rs => "RS",
+        }
+    }
+}
+
+impl FromStr for BwType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "AS" => Ok(BwType::As),
+            "CT" => Ok(BwType::Ct),
+            "RR" => Ok(BwType::Rr),
+            "RS" => Ok(BwType::Rs),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
+        }
+    }
+}
+
+impl Display for BwType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Method of encryption (Obselete)
+///
+/// Note: This field is obsolete and and MUST NOT be used. It is included in only for legacy reasons
+/// See [RFC 8866 Section 5.12](https://datatracker.ietf.org/doc/html/rfc8866#section-5.12)
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum KeyMethod {
+    /// Untransformed
+    Clear,
+    /// Base64 encoded
+    Base64,
+    /// URI to obtain the key
+    Uri,
+    /// User should be prompted for the key
+    Prompt,
+}
+
+impl KeyMethod {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            KeyMethod::Clear => "clear",
+            KeyMethod::Base64 => "base64",
+            KeyMethod::Uri => "uri",
+            KeyMethod::Prompt => "prompt",
+        }
+    }
+}
+
+impl FromStr for KeyMethod {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // case-sensitive
+        match s {
+            "clear" => Ok(KeyMethod::Clear),
+            "base64" => Ok(KeyMethod::Base64),
+            "uri" => Ok(KeyMethod::Uri),
+            "prompt" => Ok(KeyMethod::Prompt),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
+        }
+    }
+}
+
+impl Display for KeyMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The media type
+///
+/// See [RFC 8866 Section 5.14](https://datatracker.ietf.org/doc/html/rfc8866#section-5.14)
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum MediaType {
+    /// Audio type
+    Audio,
+    /// Video type
+    Video,
+    /// Text type
+    Text,
+    /// Application type
+    Application,
+    /// Message type
+    Message,
+    /// Image type. See [RFC 6466](https://datatracker.ietf.org/doc/html/rfc6466)
+    Image,
+}
+
+impl MediaType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MediaType::Audio => "audio",
+            MediaType::Video => "video",
+            MediaType::Text => "text",
+            MediaType::Application => "application",
+            MediaType::Message => "message",
+            MediaType::Image => "image",
+        }
+    }
+}
+
+impl FromStr for MediaType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "audio" => Ok(MediaType::Audio),
+            "video" => Ok(MediaType::Video),
+            "text" => Ok(MediaType::Text),
+            "application" => Ok(MediaType::Application),
+            "message" => Ok(MediaType::Message),
+            "image" => Ok(MediaType::Image),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
+        }
+    }
+}
+
+impl Display for MediaType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Transport Protocol for the media
+///
+/// See [RFC 8866 Section 5.14](https://datatracker.ietf.org/doc/html/rfc8866#section-5.14)
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum TransportProto {
+    /// Direct UDP
+    Udp,
+    /// RTP over UDP
+    RtpAvp,
+    /// Secure RTP over UDP
+    RtpSavp,
+    /// Secure RTP over UDP with RTCP-based feedback
+    RtpSavpf,
+}
+
+impl TransportProto {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            // The strings are case-insensitive, but the spec (RFC 8866) uses lower-case of the "udp" protocol
+            // and upper-case for the others so keeping it the same
+            TransportProto::Udp => "udp",
+            TransportProto::RtpAvp => "RTP/AVP",
+            TransportProto::RtpSavp => "RTP/SAVP",
+            TransportProto::RtpSavpf => "RTP/SAVPF",
+        }
+    }
+}
+
+impl FromStr for TransportProto {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // The strings are case-insensitive, but the spec (RFC 8866) uses lower-case of the "udp" protocol
+        // and upper-case for the others so keeping it the same
+        if "udp".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::Udp)
+        } else if "RTP/AVP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::RtpAvp)
+        } else if "RTP/SAVP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::RtpSavp)
+        } else if "RTP/SAVPF".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::RtpSavpf)
+        } else {
+            Err(ParseEnumError::Invalid(s.to_string()))
+        }
+    }
+}
+
+impl Display for TransportProto {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Originator of the session.
 ///
-/// See [RFC 4566 Section 5.2](https://tools.ietf.org/html/rfc4566#section-5.2) for more details.
+/// See [RFC 8866 Section 5.2](https://tools.ietf.org/html/rfc8866#section-5.2) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Origin {
@@ -75,7 +378,7 @@ pub struct Origin {
 
 /// Connection data for the session or media.
 ///
-/// See [RFC 4566 Section 5.7](https://tools.ietf.org/html/rfc4566#section-5.7) for more details.
+/// See [RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Connection {
@@ -89,7 +392,7 @@ pub struct Connection {
 
 /// Bandwidth information for the session or media.
 ///
-/// See [RFC 4566 Section 5.8](https://tools.ietf.org/html/rfc4566#section-5.8) for more details.
+/// See [RFC 8866 Section 5.8](https://tools.ietf.org/html/rfc8866#section-5.8) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Bandwidth {
@@ -101,7 +404,7 @@ pub struct Bandwidth {
 
 /// Timing information of the session.
 ///
-/// See [RFC 4566 Section 5.9](https://tools.ietf.org/html/rfc4566#section-5.9) for more details.
+/// See [RFC 8866 Section 5.9](https://tools.ietf.org/html/rfc8866#section-5.9) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Time {
@@ -115,7 +418,7 @@ pub struct Time {
 
 /// Repeat times for timing information.
 ///
-/// See [RFC 4566 Section 5.10](https://tools.ietf.org/html/rfc4566#section-5.10) for more details.
+/// See [RFC 8866 Section 5.10](https://tools.ietf.org/html/rfc8866#section-5.10) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Repeat {
@@ -129,7 +432,7 @@ pub struct Repeat {
 
 /// Time zone information for the session.
 ///
-/// See [RFC 4566 Section 5.11](https://tools.ietf.org/html/rfc4566#section-5.11) for more details.
+/// See [RFC 8866 Section 5.11](https://tools.ietf.org/html/rfc8866#section-5.11) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TimeZone {
@@ -141,7 +444,8 @@ pub struct TimeZone {
 
 /// Encryption key for the session or media.
 ///
-/// See [RFC 4566 Section 5.12](https://tools.ietf.org/html/rfc4566#section-5.12) for more details.
+/// Note: This field is obsolete and and MUST NOT be used. It is included in only for legacy reasons
+/// See [RFC 8866 Section 5.12](https://tools.ietf.org/html/rfc8866#section-5.12) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Key {
@@ -153,7 +457,7 @@ pub struct Key {
 
 /// Attributes for the session or media.
 ///
-/// See [RFC 4566 Section 5.13](https://tools.ietf.org/html/rfc4566#section-5.13) for more details.
+/// See [RFC 8866 Section 5.13](https://tools.ietf.org/html/rfc8866#section-5.13) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Attribute {
@@ -165,7 +469,7 @@ pub struct Attribute {
 
 /// Media description.
 ///
-/// See [RFC 4566 Section 5.14](https://tools.ietf.org/html/rfc4566#section-5.14) for more details.
+/// See [RFC 8866 Section 5.14](https://tools.ietf.org/html/rfc8866#section-5.14) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Media {
@@ -193,7 +497,7 @@ pub struct Media {
 
 /// SDP session description.
 ///
-/// See [RFC 4566 Section 5](https://tools.ietf.org/html/rfc4566#section-5) for more details.
+/// See [RFC 8866 Section 5](https://tools.ietf.org/html/rfc8866#section-5) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Session {
@@ -311,6 +615,115 @@ impl Session {
     }
 }
 
+impl Origin {
+    /// Constructs a `AddrType` from a string
+    pub fn try_addrtype(&self) -> Result<AddrType, ParseEnumError> {
+        AddrType::from_str(self.addrtype.as_str())
+    }
+
+    /// Converts a `AddrType` to string and sets it to the `addrtype`
+    pub fn set_from_addrtype(&mut self, addrtype: AddrType) {
+        self.addrtype = addrtype.to_string();
+    }
+
+    /// Constructs a `NetType` from a string
+    pub fn try_nettype(&self) -> Result<NetType, ParseEnumError> {
+        NetType::from_str(self.nettype.as_str())
+    }
+
+    /// Converts a `NetType` to string and sets it to the `nettype`
+    pub fn set_from_nettype(&mut self, nettype: NetType) {
+        self.nettype = nettype.to_string();
+    }
+
+    /// Constructs a `IpAddr` from a string
+    pub fn try_unicast_address(&self) -> Result<IpAddr, AddrParseError> {
+        self.unicast_address.parse()
+    }
+
+    /// Converts a `IpAddr` to string and sets it to the `unicast_address`
+    pub fn set_unicast_address(&mut self, unicast_address: IpAddr) {
+        self.unicast_address = unicast_address.to_string();
+    }
+}
+
+impl Connection {
+    /// Constructs a `AddrType` from a string
+    pub fn try_addrtype(&self) -> Result<AddrType, ParseEnumError> {
+        AddrType::from_str(self.addrtype.as_str())
+    }
+
+    /// Converts a `AddrType` to string and sets it to the `addrtype`
+    pub fn set_from_addrtype(&mut self, addrtype: AddrType) {
+        self.addrtype = addrtype.to_string();
+    }
+
+    /// Constructs a `NetType` from a string
+    pub fn try_nettype(&self) -> Result<NetType, ParseEnumError> {
+        NetType::from_str(self.nettype.as_str())
+    }
+
+    pub fn set_from_nettype(&mut self, nettype: NetType) {
+        self.nettype = nettype.to_string();
+    }
+
+    /// Constructs a `IpAddr` from a string
+    pub fn try_connection_address(&self) -> Result<IpAddr, AddrParseError> {
+        self.connection_address.parse()
+    }
+
+    /// Converts a `IpAddr` to string and sets it to the `connection_address`
+    pub fn set_connection_address(&mut self, connection_address: IpAddr) {
+        self.connection_address = connection_address.to_string();
+    }
+}
+
+impl Bandwidth {
+    /// Constructs a `BwType` from a string
+    pub fn try_bwtype(&self) -> Result<BwType, ParseEnumError> {
+        BwType::from_str(self.bwtype.as_str())
+    }
+
+    /// Converts a `BwType` to string and sets it to the `bwtype`
+    pub fn set_from_bwtype(&mut self, bwtype: BwType) {
+        self.bwtype = bwtype.to_string();
+    }
+}
+
+impl Key {
+    /// Constructs a `KeyMethod` from a string
+    pub fn try_keymethod(&self) -> Result<KeyMethod, ParseEnumError> {
+        KeyMethod::from_str(self.method.as_str())
+    }
+
+    /// Converts a `KeyMethod` to string and sets it to the `method`
+    pub fn set_from_keymethod(&mut self, method: KeyMethod) {
+        self.method = method.to_string();
+    }
+}
+
+impl Media {
+    /// Constructs a `MediaType` from a string
+    pub fn try_mediatype(&self) -> Result<MediaType, ParseEnumError> {
+        MediaType::from_str(self.media.as_str())
+    }
+
+    /// Converts a `MediaType` to string and sets it to the `media`
+    pub fn set_from_mediatype(&mut self, media: MediaType) {
+        self.media = media.to_string();
+    }
+
+    /// Constructs a `TransportProto` from a string
+    pub fn try_transport_proto(&self) -> Result<TransportProto, ParseEnumError> {
+        TransportProto::from_str(self.proto.as_str())
+    }
+
+    /// Converts a `TransportProto` to string and sets it to the `proto`
+    pub fn set_from_transport_proto(&mut self, proto: TransportProto) {
+        self.proto = proto.to_string();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,7 +745,7 @@ z=2882844526 -1h 2898848070 0\r
 k=clear:1234\r
 a=recvonly\r
 m=audio 49170 RTP/AVP 0\r
-m=video 51372/2 RTP/AVP 99\r
+m=video 51372/2 RTP/AVP 99 97 98\r
 a=rtpmap:99 h263-1998/90000\r
 a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA\r
 ";
@@ -340,6 +753,17 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
         let mut written = vec![];
         parsed.write(&mut written).unwrap();
         assert_eq!(String::from_utf8_lossy(&written), sdp);
+        assert_eq!(parsed.origin.try_addrtype(), Ok(AddrType::Ip4));
+        assert_ne!(parsed.origin.try_nettype(), Ok(NetType::Pstn));
+        assert_eq!(
+            parsed.origin.try_unicast_address(),
+            Ok(IpAddr::V4(std::net::Ipv4Addr::new(10, 47, 16, 5)))
+        );
+        assert_eq!(parsed.medias[0].try_mediatype(), Ok(MediaType::Audio));
+        assert_ne!(
+            parsed.medias[1].try_transport_proto(),
+            Ok(TransportProto::RtpSavpf)
+        );
     }
 
     #[test]
