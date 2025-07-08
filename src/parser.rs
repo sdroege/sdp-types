@@ -62,23 +62,23 @@ impl std::fmt::Display for ParserError {
             #[allow(deprecated)]
             ParserError::UnexpectedLine(line, c) => {
                 if let Ok(c) = char::try_from(c as u32) {
-                    write!(f, "Unexpected line {} starting with '{}'", line, c)
+                    write!(f, "Unexpected line {line} starting with '{c}'")
                 } else {
-                    write!(f, "Unexpected line {} starting with U+{:04x}", line, c)
+                    write!(f, "Unexpected line {line} starting with U+{c:04x}")
                 }
             }
             ParserError::InvalidLineFormat(line, ref s) => {
-                write!(f, "Invalid formatted line {}: \"{}\"", line, s)
+                write!(f, "Invalid formatted line {line}: \"{s}\"")
             }
             ParserError::InvalidFieldEncoding(line, s) => {
-                write!(f, "Invalid field encoding in line {} at {}", line, s)
+                write!(f, "Invalid field encoding in line {line} at {s}")
             }
             ParserError::InvalidFieldFormat(line, s) => {
-                write!(f, "Invalid field formatting in line {} at {}", line, s)
+                write!(f, "Invalid field formatting in line {line} at {s}")
             }
-            ParserError::MissingField(line, s) => write!(f, "Missing field {} in line {}", s, line),
+            ParserError::MissingField(line, s) => write!(f, "Missing field {s} in line {line}"),
             ParserError::FieldTrailingData(line, s) => {
-                write!(f, "Field {} in line {} has trailing data", s, line)
+                write!(f, "Field {s} in line {line} has trailing data")
             }
             ParserError::InvalidVersion(line, ref s) => write!(
                 f,
@@ -86,28 +86,28 @@ impl std::fmt::Display for ParserError {
                 line,
                 String::from_utf8_lossy(s)
             ),
-            ParserError::MultipleVersions(line) => write!(f, "Multiple versions in line {}", line),
+            ParserError::MultipleVersions(line) => write!(f, "Multiple versions in line {line}"),
             ParserError::NoVersion => write!(f, "No version line"),
-            ParserError::MultipleOrigins(line) => write!(f, "Multiple origins in line {}", line),
+            ParserError::MultipleOrigins(line) => write!(f, "Multiple origins in line {line}"),
             #[allow(deprecated)]
             ParserError::NoOrigin => write!(f, "No origin line"),
             ParserError::MultipleSessionNames(line) => {
-                write!(f, "Multiple session-names in line {}", line)
+                write!(f, "Multiple session-names in line {line}")
             }
             #[allow(deprecated)]
             ParserError::NoSessionName => write!(f, "No session-name line"),
             ParserError::MultipleSessionDescription(line) => {
-                write!(f, "Multiple session-information in line {}", line)
+                write!(f, "Multiple session-information in line {line}")
             }
-            ParserError::MultipleUris(line) => write!(f, "Multiple URIs in line {}", line),
+            ParserError::MultipleUris(line) => write!(f, "Multiple URIs in line {line}"),
             ParserError::MultipleConnections(line) => {
-                write!(f, "Multiple connections in line {}", line)
+                write!(f, "Multiple connections in line {line}")
             }
-            ParserError::MultipleTimeZones(line) => write!(f, "Multiple zones in line {}", line),
+            ParserError::MultipleTimeZones(line) => write!(f, "Multiple zones in line {line}"),
             ParserError::MultipleMediaTitles(line) => {
-                write!(f, "Multiple media titles in line {}", line)
+                write!(f, "Multiple media titles in line {line}")
             }
-            ParserError::MultipleKeys(line) => write!(f, "Multiple keys in line {}", line),
+            ParserError::MultipleKeys(line) => write!(f, "Multiple keys in line {line}"),
         }
     }
 }

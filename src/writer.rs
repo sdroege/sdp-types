@@ -6,7 +6,7 @@ use super::*;
 
 fn format_time<W: std::io::Write>(w: &mut W, t: u64) -> Result<(), std::io::Error> {
     if t == 0 {
-        write!(w, "{}", t)?;
+        write!(w, "{t}")?;
     } else if t % 86_400 == 0 {
         write!(w, "{}d", t / 86_400)?;
     } else if t % 3_600 == 0 {
@@ -14,7 +14,7 @@ fn format_time<W: std::io::Write>(w: &mut W, t: u64) -> Result<(), std::io::Erro
     } else if t % 60 == 0 {
         write!(w, "{}m", t / 60)?;
     } else {
-        write!(w, "{}", t)?;
+        write!(w, "{t}")?;
     }
 
     Ok(())
@@ -147,12 +147,12 @@ impl Media {
         write!(w, "m={media} {port}", media = self.media, port = self.port)?;
 
         if let Some(ref num_ports) = self.num_ports {
-            write!(w, "/{}", num_ports)?;
+            write!(w, "/{num_ports}")?;
         }
         writeln!(w, " {} {}\r", self.proto, self.fmt)?;
 
         if let Some(ref media_title) = self.media_title {
-            writeln!(w, "i={media_title}\r", media_title = media_title)?;
+            writeln!(w, "i={media_title}\r")?;
         }
 
         for connection in &self.connections {
@@ -183,23 +183,19 @@ impl Session {
         writeln!(w, "s={session_name}\r", session_name = self.session_name)?;
 
         if let Some(ref session_description) = self.session_description {
-            writeln!(
-                w,
-                "i={session_description}\r",
-                session_description = session_description
-            )?;
+            writeln!(w, "i={session_description}\r")?;
         }
 
         if let Some(ref uri) = self.uri {
-            writeln!(w, "u={uri}\r", uri = uri)?;
+            writeln!(w, "u={uri}\r")?;
         }
 
         for email in &self.emails {
-            writeln!(w, "e={email}\r", email = email)?;
+            writeln!(w, "e={email}\r")?;
         }
 
         for phone in &self.phones {
-            writeln!(w, "p={phone}\r", phone = phone)?;
+            writeln!(w, "p={phone}\r")?;
         }
 
         if let Some(ref connection) = self.connection {
