@@ -541,6 +541,19 @@ impl std::fmt::Display for AttributeNotFoundError {
     }
 }
 
+/// Attribute error with specific details
+// TODO: combine this and AttributeNotFoundError?
+#[derive(Debug, PartialEq, Eq)]
+pub struct AttributeErr(&'static str);
+
+impl std::error::Error for AttributeErr {}
+
+impl std::fmt::Display for AttributeErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl Media {
     /// Checks if the given attribute exists.
     pub fn has_attribute(&self, name: &str) -> bool {
