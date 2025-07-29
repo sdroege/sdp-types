@@ -354,6 +354,75 @@ impl Display for TransportProto {
     }
 }
 
+/// RtpMap Attribute
+///
+/// See [RFC 8866 Section 6.6](https://datatracker.ietf.org/doc/html/rfc8866#section-6.6) for more details
+#[derive(Debug, Clone, PartialEq)]
+pub struct RtpMap {
+    /// Payload type, a numerical value between 0 and 127
+    pub pt: u8,
+    /// Name of the encoding
+    // TODO: is it useful to have an enum for all known encoding?
+    pub encoding: String,
+    /// Clock rate
+    pub clock_rate: u32,
+    /// Encoding parameters. Currently used only for audio channel count
+    pub params: Option<String>,
+}
+
+impl RtpMap {
+    /// Converts the RtpMap to String
+    pub fn as_string(&self) -> String {
+        let mut s = format!("{} {}/{}", self.pt, self.encoding, self.clock_rate);
+        if let Some(params) = &self.params {
+            s += format!("/{params}").as_str();
+        }
+        s
+    }
+}
+
+impl FromStr for RtpMap {
+    type Err = AttributeErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((pt, rest)) = s.split_once(' ') else {
+            return Err(AttributeErr("Failed to split the rtpmap using a space"));
+        };
+
+        let Ok(pt) = pt.parse::<u8>() else {
+            return Err(AttributeErr("Failed to parse payload type in rtpmap"));
+        };
+
+        let mut i = rest.split('/');
+        let Some(encoding) = i.next() else {
+            return Err(AttributeErr("Failed to get encoding name in the rtpmap"));
+        };
+
+        let Some(clock_rate) = i.next() else {
+            return Err(AttributeErr("Failed to get clock rate in the rtpmap"));
+        };
+
+        let Ok(clock_rate) = clock_rate.parse::<u32>() else {
+            return Err(AttributeErr("Failed to parse clock rate in rtpmap"));
+        };
+
+        let params = i.next().map(String::from);
+
+        Ok(Self {
+            pt,
+            encoding: encoding.to_owned(),
+            clock_rate,
+            params,
+        })
+    }
+}
+
+impl Display for RtpMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.as_string())
+    }
+}
+
 /// Originator of the session.
 ///
 /// See [RFC 8866 Section 5.2](https://tools.ietf.org/html/rfc8866#section-5.2) for more details.
@@ -676,6 +745,7 @@ impl Connection {
         NetType::from_str(self.nettype.as_str())
     }
 
+    /// Converts a `NetType` to string and sets it to the `nettype`
     pub fn set_from_nettype(&mut self, nettype: NetType) {
         self.nettype = nettype.to_string();
     }
@@ -734,6 +804,52 @@ impl Media {
     /// Converts a `TransportProto` to string and sets it to the `proto`
     pub fn set_from_transport_proto(&mut self, proto: TransportProto) {
         self.proto = proto.to_string();
+    }
+
+    /// Gets an iterator over all attribute values of the given name.
+    /// Each item is a `Result` with the inferred type in `Ok` and `AttributeError` in `Err`
+    pub fn get_attribute_values_typed<'a, T: FromStr<Err = AttributeErr>>(
+        &'a self,
+        name: &'a str,
+    ) -> impl Iterator<Item = Result<T, AttributeErr>> + 'a {
+        self.attributes
+            .iter()
+            .filter(move |a| a.attribute == name)
+            .map(|a| {
+                let Some(s) = &a.value else {
+                    // does not have a value for the attribute
+                    return Err(AttributeErr("No value for the attribute"));
+                };
+
+                match T::from_str(s) {
+                    Ok(t) => Ok(t),
+                    Err(e) => Err(e),
+                }
+            })
+    }
+}
+
+impl Session {
+    /// Gets an iterator over all attribute values of the given name.
+    /// Each item is a `Result` with the inferred type in `Ok` and `AttributeError` in `Err`
+    pub fn get_attribute_values_typed<'a, T: FromStr<Err = AttributeErr>>(
+        &'a self,
+        name: &'a str,
+    ) -> impl Iterator<Item = Result<T, AttributeErr>> + 'a {
+        self.attributes
+            .iter()
+            .filter(move |a| a.attribute == name)
+            .map(|a| {
+                let Some(s) = &a.value else {
+                    // does not have a value for the attribute
+                    return Err(AttributeErr("No value for the attribute"));
+                };
+
+                match T::from_str(s) {
+                    Ok(t) => Ok(t),
+                    Err(e) => Err(e),
+                }
+            })
     }
 }
 
@@ -801,6 +917,22 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
                     value: Some("100 h264/90000".into()),
                 },
                 Attribute {
+                    attribute: "rtpmap".into(),
+                    value: None,
+                },
+                Attribute {
+                    attribute: "rtpmap".into(),
+                    value: Some(
+                        RtpMap {
+                            pt: 101,
+                            encoding: "L16".into(),
+                            clock_rate: 16000,
+                            params: Some("2".into()),
+                        }
+                        .as_string(),
+                    ),
+                },
+                Attribute {
                     attribute: "rtcp".into(),
                     value: None,
                 },
@@ -826,8 +958,22 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
                 .get_attribute_values("rtpmap")
                 .unwrap()
                 .collect::<Vec<_>>(),
-            &[Some("99 h263-1998/90000"), Some("100 h264/90000")]
+            &[
+                Some("99 h263-1998/90000"),
+                Some("100 h264/90000"),
+                None,
+                Some("101 L16/16000/2"),
+            ]
         );
+
+        let v = media
+            .get_attribute_values_typed("rtpmap")
+            .collect::<Vec<Result<RtpMap, AttributeErr>>>();
+        assert_eq!(v[0].as_ref().unwrap().clock_rate, 90000);
+        assert_eq!(v[1].as_ref().unwrap().encoding, "h264");
+        assert_eq!(v[2], Err(AttributeErr("No value for the attribute")));
+        assert_eq!(v[3].as_ref().unwrap().params.as_ref().unwrap(), "2");
+
         assert_eq!(
             media
                 .get_attribute_values("rtcp")
@@ -888,6 +1034,18 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
             session.get_first_attribute_value("rtpmap"),
             Ok(Some("99 h263-1998/90000"))
         );
+
+        let v = session
+            .get_first_attribute_value("rtpmap")
+            .unwrap()
+            .unwrap();
+        let rtpmap = RtpMap::from_str(v).unwrap();
+        assert_eq!(rtpmap.clock_rate, 90000);
+        assert_eq!(rtpmap.encoding, "h263-1998");
+        assert_ne!(rtpmap.encoding, "h263");
+        assert_ne!(rtpmap.params, Some("2".to_string()));
+        assert_eq!(rtpmap.pt, 99);
+
         assert_eq!(session.get_first_attribute_value("rtcp"), Ok(None));
         assert_eq!(
             session.get_first_attribute_value("foo"),
