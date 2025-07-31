@@ -423,6 +423,58 @@ impl Display for RtpMap {
     }
 }
 
+/// Format Parameters
+///
+/// See [RFC 8866 Section 6.15](https://datatracker.ietf.org/doc/html/rfc8866#section-6.15) for more details
+pub struct Fmtp {
+    /// Payload format
+    pub fmt: u8,
+    /// Format specific parameters
+    pub params: Vec<(String, String)>,
+}
+
+impl Fmtp {
+    /// Converts the Fmtp to String
+    pub fn as_string(&self) -> String {
+        let mut s = format!("{} ", self.fmt);
+        for (key, value) in &self.params {
+            s += format!("{key}={value};").as_str();
+        }
+        s.trim_end_matches(';').to_string()
+    }
+}
+
+impl FromStr for Fmtp {
+    type Err = AttributeErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((fmt, rest)) = s.split_once(' ') else {
+            return Err(AttributeErr("Failed to split the format using a space"));
+        };
+
+        let Ok(fmt) = fmt.parse::<u8>() else {
+            return Err(AttributeErr("Failed to parse format in fmtp"));
+        };
+
+        let mut params: Vec<(String, String)> = Vec::new();
+        for param in rest.split(';') {
+            if let Some((key, value)) = param.split_once('=') {
+                params.push((key.to_string(), value.to_string()));
+            } else {
+                return Err(AttributeErr("Failed to parse key=value in fmtp"));
+            }
+        }
+
+        Ok(Self { fmt, params })
+    }
+}
+
+impl Display for Fmtp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.as_string())
+    }
+}
+
 /// Originator of the session.
 ///
 /// See [RFC 8866 Section 5.2](https://tools.ietf.org/html/rfc8866#section-5.2) for more details.
@@ -933,6 +985,20 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
                     ),
                 },
                 Attribute {
+                    attribute: "fmtp".into(),
+                    value: Some(
+                        Fmtp {
+                            fmt: 100,
+                            params: Vec::from([
+                                ("profile-level-id".to_string(), "42e016".to_string()),
+                                ("max-mbps".to_string(), "108000".to_string()),
+                                ("max-fs".to_string(), "3600".to_string()),
+                            ]),
+                        }
+                        .as_string(),
+                    ),
+                },
+                Attribute {
                     attribute: "rtcp".into(),
                     value: None,
                 },
@@ -973,6 +1039,13 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
         assert_eq!(v[1].as_ref().unwrap().encoding, "h264");
         assert_eq!(v[2], Err(AttributeErr("No value for the attribute")));
         assert_eq!(v[3].as_ref().unwrap().params.as_ref().unwrap(), "2");
+
+        assert_eq!(
+            media.get_first_attribute_value("fmtp"),
+            Ok(Some(
+                "100 profile-level-id=42e016;max-mbps=108000;max-fs=3600"
+            ))
+        );
 
         assert_eq!(
             media
