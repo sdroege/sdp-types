@@ -862,7 +862,8 @@ a=control:track1\r
 a=rtpmap:8 PCMA/8000/1\r
 
 ";
-        let _parsed = Session::parse(&sdp[..]).unwrap();
+        let parsed = Session::parse(&sdp[..]).unwrap();
+        assert_eq!(parsed.origin.try_nettype(), Ok(NetType::In));
     }
 
     /// Parses SDP from a Geovision camera which (incorrectly) omits the "t="

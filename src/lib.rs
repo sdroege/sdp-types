@@ -2,7 +2,7 @@
 //
 // Licensed under the MIT license, see the LICENSE file or <http://opensource.org/licenses/MIT>
 
-//! Crate for handling SDP ([RFC 4566](https://tools.ietf.org/html/rfc4566))
+//! Crate for handling SDP ([RFC 8866](https://tools.ietf.org/html/rfc8866))
 //! session descriptions, including a parser and serializer.
 //!
 //! ## Serializing an SDP
@@ -43,6 +43,12 @@
 //!    are currently parsed as a plain string and not according to the SDP
 //!    grammar.
 
+use std::{
+    fmt::Display,
+    net::{AddrParseError, IpAddr},
+    str::FromStr,
+};
+
 use bstr::*;
 use fallible_iterator::FallibleIterator;
 
@@ -51,9 +57,511 @@ mod writer;
 
 pub use parser::ParserError;
 
+/// Errors while parsing strings to Enum
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ParseEnumError {
+    Invalid(String),
+}
+
+/// Type of network of the originator or a connection of the session.
+///
+/// See [RFC 8866 Section 5.2](https://tools.ietf.org/html/rfc8866#section-5.2),
+/// [RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7) and
+/// [RFC 8866 Section 8.2.6](https://datatracker.ietf.org/doc/html/rfc8866#section-8.2.6) for more details
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum NetType {
+    /// Internet
+    In,
+    /// Telephone Network
+    Tn,
+    /// ATM Bearer Connection
+    Atm,
+    /// Public Switched Telephone Network
+    Pstn,
+}
+
+impl NetType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NetType::In => "IN",
+            NetType::Tn => "TN",
+            NetType::Atm => "ATM",
+            NetType::Pstn => "PSTN",
+        }
+    }
+}
+
+impl FromStr for NetType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "IN" => Ok(NetType::In),
+            "TN" => Ok(NetType::Tn),
+            "ATM" => Ok(NetType::Atm),
+            "PSTN" => Ok(NetType::Pstn),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
+        }
+    }
+}
+
+impl Display for NetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Type of address of the originator or a connection of the session
+///
+/// See [RFC 8866 Section 5.2](https://tools.ietf.org/html/rfc8866#section-5.2),
+/// [RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum AddrType {
+    /// IPv4 address
+    Ip4,
+    /// Ipv6 address
+    Ip6,
+}
+
+impl AddrType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AddrType::Ip4 => "IP4",
+            AddrType::Ip6 => "IP6",
+        }
+    }
+}
+
+impl FromStr for AddrType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "IP4" => Ok(AddrType::Ip4),
+            "IP6" => Ok(AddrType::Ip6),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
+        }
+    }
+}
+
+impl Display for AddrType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Type of the Bandwidth value.
+///
+/// See [RFC 8866 Section 5.8](https://tools.ietf.org/html/rfc8866#section-5.8) for more details.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum BwType {
+    /// Conference total - maximum bandwith a session will use
+    Ct,
+    /// Application Specific maximum bandwidth
+    As,
+    /// Bandwidth assigned for RTCP reports by active senders. See [RFC 3890 Section 1.1.3](https://datatracker.ietf.org/doc/html/rfc3890#section-1.1.3)
+    Rr,
+    /// Bandwidth assigned for RTCP reports by active receivers. See [RFC 3890 Section 1.1.3](https://datatracker.ietf.org/doc/html/rfc3890#section-1.1.3)
+    Rs,
+}
+
+impl BwType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BwType::As => "AS",
+            BwType::Ct => "CT",
+            BwType::Rr => "RR",
+            BwType::Rs => "RS",
+        }
+    }
+}
+
+impl FromStr for BwType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "AS" => Ok(BwType::As),
+            "CT" => Ok(BwType::Ct),
+            "RR" => Ok(BwType::Rr),
+            "RS" => Ok(BwType::Rs),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
+        }
+    }
+}
+
+impl Display for BwType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Method of encryption (Obselete)
+///
+/// Note: This field is obsolete and and MUST NOT be used. It is included in only for legacy reasons
+/// See [RFC 8866 Section 5.12](https://datatracker.ietf.org/doc/html/rfc8866#section-5.12)
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum KeyMethod {
+    /// Untransformed
+    Clear,
+    /// Base64 encoded
+    Base64,
+    /// URI to obtain the key
+    Uri,
+    /// User should be prompted for the key
+    Prompt,
+}
+
+impl KeyMethod {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            KeyMethod::Clear => "clear",
+            KeyMethod::Base64 => "base64",
+            KeyMethod::Uri => "uri",
+            KeyMethod::Prompt => "prompt",
+        }
+    }
+}
+
+impl FromStr for KeyMethod {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // case-sensitive
+        match s {
+            "clear" => Ok(KeyMethod::Clear),
+            "base64" => Ok(KeyMethod::Base64),
+            "uri" => Ok(KeyMethod::Uri),
+            "prompt" => Ok(KeyMethod::Prompt),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
+        }
+    }
+}
+
+impl Display for KeyMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The media type
+///
+/// See [RFC 8866 Section 5.14](https://datatracker.ietf.org/doc/html/rfc8866#section-5.14)
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum MediaType {
+    /// Audio type
+    Audio,
+    /// Video type
+    Video,
+    /// Text type
+    Text,
+    /// Application type
+    Application,
+    /// Message type
+    Message,
+    /// Image type. See [RFC 6466](https://datatracker.ietf.org/doc/html/rfc6466)
+    Image,
+}
+
+impl MediaType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MediaType::Audio => "audio",
+            MediaType::Video => "video",
+            MediaType::Text => "text",
+            MediaType::Application => "application",
+            MediaType::Message => "message",
+            MediaType::Image => "image",
+        }
+    }
+}
+
+impl FromStr for MediaType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "audio" => Ok(MediaType::Audio),
+            "video" => Ok(MediaType::Video),
+            "text" => Ok(MediaType::Text),
+            "application" => Ok(MediaType::Application),
+            "message" => Ok(MediaType::Message),
+            "image" => Ok(MediaType::Image),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
+        }
+    }
+}
+
+impl Display for MediaType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Transport Protocol for the media
+///
+/// See [RFC 8866 Section 5.14](https://datatracker.ietf.org/doc/html/rfc8866#section-5.14)
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum TransportProto {
+    /// Direct UDP
+    Udp,
+    /// RTP over UDP
+    RtpAvp,
+    /// Secure RTP over UDP
+    RtpSavp,
+    /// Secure RTP over UDP with RTCP-based feedback
+    RtpSavpf,
+}
+
+impl TransportProto {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            // The strings are case-insensitive, but the spec (RFC 8866) uses lower-case of the "udp" protocol
+            // and upper-case for the others so keeping it the same
+            TransportProto::Udp => "udp",
+            TransportProto::RtpAvp => "RTP/AVP",
+            TransportProto::RtpSavp => "RTP/SAVP",
+            TransportProto::RtpSavpf => "RTP/SAVPF",
+        }
+    }
+}
+
+impl FromStr for TransportProto {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // The strings are case-insensitive, but the spec (RFC 8866) uses lower-case of the "udp" protocol
+        // and upper-case for the others so keeping it the same
+        if "udp".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::Udp)
+        } else if "RTP/AVP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::RtpAvp)
+        } else if "RTP/SAVP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::RtpSavp)
+        } else if "RTP/SAVPF".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::RtpSavpf)
+        } else {
+            Err(ParseEnumError::Invalid(s.to_string()))
+        }
+    }
+}
+
+impl Display for TransportProto {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// RtpMap Attribute
+///
+/// See [RFC 8866 Section 6.6](https://datatracker.ietf.org/doc/html/rfc8866#section-6.6) for more details
+#[derive(Debug, Clone, PartialEq)]
+pub struct RtpMap {
+    /// Payload type, a numerical value between 0 and 127
+    pub pt: u8,
+    /// Name of the encoding
+    // TODO: is it useful to have an enum for all known encoding?
+    pub encoding: String,
+    /// Clock rate
+    pub clock_rate: u32,
+    /// Encoding parameters. Currently used only for audio channel count
+    pub params: Option<String>,
+}
+
+impl RtpMap {
+    /// Converts the RtpMap to String
+    pub fn as_string(&self) -> String {
+        let mut s = format!("{} {}/{}", self.pt, self.encoding, self.clock_rate);
+        if let Some(params) = &self.params {
+            s += format!("/{params}").as_str();
+        }
+        s
+    }
+}
+
+impl FromStr for RtpMap {
+    type Err = AttributeErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((pt, rest)) = s.split_once(' ') else {
+            return Err(AttributeErr("Failed to split the rtpmap using a space"));
+        };
+
+        let Ok(pt) = pt.parse::<u8>() else {
+            return Err(AttributeErr("Failed to parse payload type in rtpmap"));
+        };
+
+        let mut i = rest.split('/');
+        let Some(encoding) = i.next() else {
+            return Err(AttributeErr("Failed to get encoding name in the rtpmap"));
+        };
+
+        let Some(clock_rate) = i.next() else {
+            return Err(AttributeErr("Failed to get clock rate in the rtpmap"));
+        };
+
+        let Ok(clock_rate) = clock_rate.parse::<u32>() else {
+            return Err(AttributeErr("Failed to parse clock rate in rtpmap"));
+        };
+
+        let params = i.next().map(String::from);
+
+        Ok(Self {
+            pt,
+            encoding: encoding.to_owned(),
+            clock_rate,
+            params,
+        })
+    }
+}
+
+impl Display for RtpMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.as_string())
+    }
+}
+
+/// Format Parameters
+///
+/// See [RFC 8866 Section 6.15](https://datatracker.ietf.org/doc/html/rfc8866#section-6.15) for more details
+pub struct Fmtp {
+    /// Payload format
+    pub fmt: u8,
+    /// Format specific parameters
+    pub params: Vec<(String, String)>,
+}
+
+impl Fmtp {
+    /// Converts the Fmtp to String
+    pub fn as_string(&self) -> String {
+        let mut s = format!("{} ", self.fmt);
+        for (key, value) in &self.params {
+            s += format!("{key}={value};").as_str();
+        }
+        s.trim_end_matches(';').to_string()
+    }
+}
+
+impl FromStr for Fmtp {
+    type Err = AttributeErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((fmt, rest)) = s.split_once(' ') else {
+            return Err(AttributeErr("Failed to split the format using a space"));
+        };
+
+        let Ok(fmt) = fmt.parse::<u8>() else {
+            return Err(AttributeErr("Failed to parse format in fmtp"));
+        };
+
+        let mut params: Vec<(String, String)> = Vec::new();
+        for param in rest.split(';') {
+            if let Some((key, value)) = param.split_once('=') {
+                params.push((key.to_string(), value.to_string()));
+            } else {
+                return Err(AttributeErr("Failed to parse key=value in fmtp"));
+            }
+        }
+
+        Ok(Self { fmt, params })
+    }
+}
+
+impl Display for Fmtp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.as_string())
+    }
+}
+/// RTCP port number and address to be used if not algorithmically derived
+/// from the RTP port described in the media line
+///
+/// See [RFC 3605 Section 2.1] https://datatracker.ietf.org/doc/html/rfc3605#section-2.1
+pub struct Rtcp {
+    /// Port used for the media stream
+    port: u16,
+    /// Network Type
+    nettype: NetType,
+    /// Address type
+    addrtype: AddrType,
+    /// IP Address, unicast or multicast
+    connection_address: IpAddr,
+}
+
+impl Rtcp {
+    /// Converts the Rtcp to String
+    pub fn as_string(&self) -> String {
+        format!(
+            "{} {} {} {}",
+            self.port, self.nettype, self.addrtype, self.connection_address
+        )
+    }
+}
+
+impl FromStr for Rtcp {
+    type Err = AttributeErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut i = s.split(' ');
+        let Some(port) = i.next() else {
+            return Err(AttributeErr(
+                "No values for rtcp attribute, failed to get port number",
+            ));
+        };
+
+        let Ok(port) = port.parse::<u16>() else {
+            return Err(AttributeErr("Failed to parse port in rtcp"));
+        };
+
+        let Some(nettype) = i.next() else {
+            return Err(AttributeErr(
+                "No values for rtcp attribute, failed to get network type",
+            ));
+        };
+
+        let Ok(nettype) = NetType::from_str(nettype) else {
+            return Err(AttributeErr("Failed to parse network type in rtcp"));
+        };
+
+        let Some(addrtype) = i.next() else {
+            return Err(AttributeErr(
+                "No values for rtcp attribute, failed to get address type",
+            ));
+        };
+
+        let Ok(addrtype) = AddrType::from_str(addrtype) else {
+            return Err(AttributeErr("Failed to parse address type in rtcp"));
+        };
+
+        let Some(connection_addr) = i.next() else {
+            return Err(AttributeErr(
+                "No values for rtcp attribute, failed to get connection address",
+            ));
+        };
+
+        let Ok(connection_address) = connection_addr.parse() else {
+            return Err(AttributeErr("Failed to parse connection address in rtcp"));
+        };
+
+        Ok(Self {
+            port,
+            nettype,
+            addrtype,
+            connection_address,
+        })
+    }
+}
+
+impl Display for Rtcp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.as_string())
+    }
+}
+
 /// Originator of the session.
 ///
-/// See [RFC 4566 Section 5.2](https://tools.ietf.org/html/rfc4566#section-5.2) for more details.
+/// See [RFC 8866 Section 5.2](https://tools.ietf.org/html/rfc8866#section-5.2) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Origin {
@@ -75,7 +583,7 @@ pub struct Origin {
 
 /// Connection data for the session or media.
 ///
-/// See [RFC 4566 Section 5.7](https://tools.ietf.org/html/rfc4566#section-5.7) for more details.
+/// See [RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Connection {
@@ -89,7 +597,7 @@ pub struct Connection {
 
 /// Bandwidth information for the session or media.
 ///
-/// See [RFC 4566 Section 5.8](https://tools.ietf.org/html/rfc4566#section-5.8) for more details.
+/// See [RFC 8866 Section 5.8](https://tools.ietf.org/html/rfc8866#section-5.8) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Bandwidth {
@@ -101,7 +609,7 @@ pub struct Bandwidth {
 
 /// Timing information of the session.
 ///
-/// See [RFC 4566 Section 5.9](https://tools.ietf.org/html/rfc4566#section-5.9) for more details.
+/// See [RFC 8866 Section 5.9](https://tools.ietf.org/html/rfc8866#section-5.9) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Time {
@@ -115,7 +623,7 @@ pub struct Time {
 
 /// Repeat times for timing information.
 ///
-/// See [RFC 4566 Section 5.10](https://tools.ietf.org/html/rfc4566#section-5.10) for more details.
+/// See [RFC 8866 Section 5.10](https://tools.ietf.org/html/rfc8866#section-5.10) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Repeat {
@@ -129,7 +637,7 @@ pub struct Repeat {
 
 /// Time zone information for the session.
 ///
-/// See [RFC 4566 Section 5.11](https://tools.ietf.org/html/rfc4566#section-5.11) for more details.
+/// See [RFC 8866 Section 5.11](https://tools.ietf.org/html/rfc8866#section-5.11) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TimeZone {
@@ -141,7 +649,8 @@ pub struct TimeZone {
 
 /// Encryption key for the session or media.
 ///
-/// See [RFC 4566 Section 5.12](https://tools.ietf.org/html/rfc4566#section-5.12) for more details.
+/// Note: This field is obsolete and and MUST NOT be used. It is included in only for legacy reasons
+/// See [RFC 8866 Section 5.12](https://tools.ietf.org/html/rfc8866#section-5.12) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Key {
@@ -153,7 +662,7 @@ pub struct Key {
 
 /// Attributes for the session or media.
 ///
-/// See [RFC 4566 Section 5.13](https://tools.ietf.org/html/rfc4566#section-5.13) for more details.
+/// See [RFC 8866 Section 5.13](https://tools.ietf.org/html/rfc8866#section-5.13) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Attribute {
@@ -165,7 +674,7 @@ pub struct Attribute {
 
 /// Media description.
 ///
-/// See [RFC 4566 Section 5.14](https://tools.ietf.org/html/rfc4566#section-5.14) for more details.
+/// See [RFC 8866 Section 5.14](https://tools.ietf.org/html/rfc8866#section-5.14) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Media {
@@ -193,7 +702,7 @@ pub struct Media {
 
 /// SDP session description.
 ///
-/// See [RFC 4566 Section 5](https://tools.ietf.org/html/rfc4566#section-5) for more details.
+/// See [RFC 8866 Section 5](https://tools.ietf.org/html/rfc8866#section-5) for more details.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Session {
@@ -234,6 +743,19 @@ impl std::error::Error for AttributeNotFoundError {}
 impl std::fmt::Display for AttributeNotFoundError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "Attribute not found")
+    }
+}
+
+/// Attribute error with specific details
+// TODO: combine this and AttributeNotFoundError?
+#[derive(Debug, PartialEq, Eq)]
+pub struct AttributeErr(&'static str);
+
+impl std::error::Error for AttributeErr {}
+
+impl std::fmt::Display for AttributeErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -311,6 +833,189 @@ impl Session {
     }
 }
 
+impl Origin {
+    /// Constructs a `AddrType` from a string
+    pub fn try_addrtype(&self) -> Result<AddrType, ParseEnumError> {
+        AddrType::from_str(self.addrtype.as_str())
+    }
+
+    /// Converts a `AddrType` to string and sets it to the `addrtype`
+    pub fn set_from_addrtype(&mut self, addrtype: AddrType) {
+        self.addrtype = addrtype.to_string();
+    }
+
+    /// Constructs a `NetType` from a string
+    pub fn try_nettype(&self) -> Result<NetType, ParseEnumError> {
+        NetType::from_str(self.nettype.as_str())
+    }
+
+    /// Converts a `NetType` to string and sets it to the `nettype`
+    pub fn set_from_nettype(&mut self, nettype: NetType) {
+        self.nettype = nettype.to_string();
+    }
+
+    /// Constructs a `IpAddr` from a string
+    pub fn try_unicast_address(&self) -> Result<IpAddr, AddrParseError> {
+        self.unicast_address.parse()
+    }
+
+    /// Converts a `IpAddr` to string and sets it to the `unicast_address`
+    pub fn set_unicast_address(&mut self, unicast_address: IpAddr) {
+        self.unicast_address = unicast_address.to_string();
+    }
+}
+
+impl Connection {
+    /// Constructs a `AddrType` from a string
+    pub fn try_addrtype(&self) -> Result<AddrType, ParseEnumError> {
+        AddrType::from_str(self.addrtype.as_str())
+    }
+
+    /// Converts a `AddrType` to string and sets it to the `addrtype`
+    pub fn set_from_addrtype(&mut self, addrtype: AddrType) {
+        self.addrtype = addrtype.to_string();
+    }
+
+    /// Constructs a `NetType` from a string
+    pub fn try_nettype(&self) -> Result<NetType, ParseEnumError> {
+        NetType::from_str(self.nettype.as_str())
+    }
+
+    /// Converts a `NetType` to string and sets it to the `nettype`
+    pub fn set_from_nettype(&mut self, nettype: NetType) {
+        self.nettype = nettype.to_string();
+    }
+
+    /// Constructs a `IpAddr` from a string
+    pub fn try_connection_address(&self) -> Result<IpAddr, AddrParseError> {
+        self.connection_address.parse()
+    }
+
+    /// Converts a `IpAddr` to string and sets it to the `connection_address`
+    pub fn set_connection_address(&mut self, connection_address: IpAddr) {
+        self.connection_address = connection_address.to_string();
+    }
+}
+
+impl Bandwidth {
+    /// Constructs a `BwType` from a string
+    pub fn try_bwtype(&self) -> Result<BwType, ParseEnumError> {
+        BwType::from_str(self.bwtype.as_str())
+    }
+
+    /// Converts a `BwType` to string and sets it to the `bwtype`
+    pub fn set_from_bwtype(&mut self, bwtype: BwType) {
+        self.bwtype = bwtype.to_string();
+    }
+}
+
+impl Key {
+    /// Constructs a `KeyMethod` from a string
+    pub fn try_keymethod(&self) -> Result<KeyMethod, ParseEnumError> {
+        KeyMethod::from_str(self.method.as_str())
+    }
+
+    /// Converts a `KeyMethod` to string and sets it to the `method`
+    pub fn set_from_keymethod(&mut self, method: KeyMethod) {
+        self.method = method.to_string();
+    }
+}
+
+impl Media {
+    /// Constructs a `MediaType` from a string
+    pub fn try_mediatype(&self) -> Result<MediaType, ParseEnumError> {
+        MediaType::from_str(self.media.as_str())
+    }
+
+    /// Converts a `MediaType` to string and sets it to the `media`
+    pub fn set_from_mediatype(&mut self, media: MediaType) {
+        self.media = media.to_string();
+    }
+
+    /// Constructs a `TransportProto` from a string
+    pub fn try_transport_proto(&self) -> Result<TransportProto, ParseEnumError> {
+        TransportProto::from_str(self.proto.as_str())
+    }
+
+    /// Converts a `TransportProto` to string and sets it to the `proto`
+    pub fn set_from_transport_proto(&mut self, proto: TransportProto) {
+        self.proto = proto.to_string();
+    }
+
+    /// Gets an iterator over all attribute values of the given name.
+    /// Each item is a `Result` with the inferred type in `Ok` and `AttributeError` in `Err`
+    /// The payload type can also be passed optionally to filter an Attribute for a particular payload format
+    pub fn get_attribute_values_typed<'a, T: FromStr<Err = AttributeErr>>(
+        &'a self,
+        name: &'a str,
+        pt: Option<&'a str>,
+    ) -> impl Iterator<Item = Result<T, AttributeErr>> + 'a {
+        self.attributes
+            .iter()
+            .filter(move |a| a.attribute == name)
+            .filter(move |a| {
+                if let Some(pt) = pt {
+                    let mut iter = self.fmt.split_ascii_whitespace();
+                    let Some(value) = a.value.as_ref() else {
+                        // does not have a value for the attribute
+                        return false;
+                    };
+
+                    let attr_pt = value.split_ascii_whitespace().next();
+
+                    let Some(attr_pt) = attr_pt else {
+                        // does not have a payload type in the attribute value
+                        return false;
+                    };
+
+                    iter.any(|fmt| {
+                        if pt == fmt && attr_pt == pt {
+                            return true;
+                        }
+                        false
+                    })
+                } else {
+                    true
+                }
+            })
+            .map(|a| {
+                let Some(s) = &a.value else {
+                    // does not have a value for the attribute
+                    return Err(AttributeErr("No value for the attribute"));
+                };
+
+                match T::from_str(s) {
+                    Ok(t) => Ok(t),
+                    Err(e) => Err(e),
+                }
+            })
+    }
+}
+
+impl Session {
+    /// Gets an iterator over all attribute values of the given name.
+    /// Each item is a `Result` with the inferred type in `Ok` and `AttributeError` in `Err`
+    pub fn get_attribute_values_typed<'a, T: FromStr<Err = AttributeErr>>(
+        &'a self,
+        name: &'a str,
+    ) -> impl Iterator<Item = Result<T, AttributeErr>> + 'a {
+        self.attributes
+            .iter()
+            .filter(move |a| a.attribute == name)
+            .map(|a| {
+                let Some(s) = &a.value else {
+                    // does not have a value for the attribute
+                    return Err(AttributeErr("No value for the attribute"));
+                };
+
+                match T::from_str(s) {
+                    Ok(t) => Ok(t),
+                    Err(e) => Err(e),
+                }
+            })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,7 +1037,7 @@ z=2882844526 -1h 2898848070 0\r
 k=clear:1234\r
 a=recvonly\r
 m=audio 49170 RTP/AVP 0\r
-m=video 51372/2 RTP/AVP 99\r
+m=video 51372/2 RTP/AVP 99 97 98\r
 a=rtpmap:99 h263-1998/90000\r
 a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B1:EC:03:FB:10:A5:5D:3A:37:AB:DD:02:AA\r
 ";
@@ -340,6 +1045,17 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
         let mut written = vec![];
         parsed.write(&mut written).unwrap();
         assert_eq!(String::from_utf8_lossy(&written), sdp);
+        assert_eq!(parsed.origin.try_addrtype(), Ok(AddrType::Ip4));
+        assert_ne!(parsed.origin.try_nettype(), Ok(NetType::Pstn));
+        assert_eq!(
+            parsed.origin.try_unicast_address(),
+            Ok(IpAddr::V4(std::net::Ipv4Addr::new(10, 47, 16, 5)))
+        );
+        assert_eq!(parsed.medias[0].try_mediatype(), Ok(MediaType::Audio));
+        assert_ne!(
+            parsed.medias[1].try_transport_proto(),
+            Ok(TransportProto::RtpSavpf)
+        );
     }
 
     #[test]
@@ -364,8 +1080,46 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
                     value: Some("100 h264/90000".into()),
                 },
                 Attribute {
-                    attribute: "rtcp".into(),
+                    attribute: "rtpmap".into(),
                     value: None,
+                },
+                Attribute {
+                    attribute: "rtpmap".into(),
+                    value: Some(
+                        RtpMap {
+                            pt: 101,
+                            encoding: "L16".into(),
+                            clock_rate: 16000,
+                            params: Some("2".into()),
+                        }
+                        .as_string(),
+                    ),
+                },
+                Attribute {
+                    attribute: "fmtp".into(),
+                    value: Some(
+                        Fmtp {
+                            fmt: 100,
+                            params: Vec::from([
+                                ("profile-level-id".to_string(), "42e016".to_string()),
+                                ("max-mbps".to_string(), "108000".to_string()),
+                                ("max-fs".to_string(), "3600".to_string()),
+                            ]),
+                        }
+                        .as_string(),
+                    ),
+                },
+                Attribute {
+                    attribute: "rtcp".into(),
+                    value: Some(
+                        Rtcp {
+                            port: 53020,
+                            nettype: NetType::In,
+                            addrtype: AddrType::Ip4,
+                            connection_address: IpAddr::V4(std::net::Ipv4Addr::new(126, 16, 64, 4)),
+                        }
+                        .as_string(),
+                    ),
                 },
             ],
         };
@@ -378,7 +1132,10 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
             media.get_first_attribute_value("rtpmap"),
             Ok(Some("99 h263-1998/90000"))
         );
-        assert_eq!(media.get_first_attribute_value("rtcp"), Ok(None));
+        assert_eq!(
+            media.get_first_attribute_value("rtcp"),
+            Ok(Some("53020 IN IP4 126.16.64.4"))
+        );
         assert_eq!(
             media.get_first_attribute_value("foo"),
             Err(AttributeNotFoundError)
@@ -389,15 +1146,41 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
                 .get_attribute_values("rtpmap")
                 .unwrap()
                 .collect::<Vec<_>>(),
-            &[Some("99 h263-1998/90000"), Some("100 h264/90000")]
+            &[
+                Some("99 h263-1998/90000"),
+                Some("100 h264/90000"),
+                None,
+                Some("101 L16/16000/2"),
+            ]
         );
+
+        let v = media
+            .get_attribute_values_typed("rtpmap", None)
+            .collect::<Vec<Result<RtpMap, AttributeErr>>>();
+        assert_eq!(v[0].as_ref().unwrap().clock_rate, 90000);
+        assert_eq!(v[1].as_ref().unwrap().encoding, "h264");
+        assert_eq!(v[2], Err(AttributeErr("No value for the attribute")));
+        assert_eq!(v[3].as_ref().unwrap().params.as_ref().unwrap(), "2");
+
+        let v = media
+            .get_attribute_values_typed("rtpmap", Some("99"))
+            .collect::<Vec<Result<RtpMap, AttributeErr>>>();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].as_ref().unwrap().encoding, "h263-1998");
+
         assert_eq!(
-            media
-                .get_attribute_values("rtcp")
-                .unwrap()
-                .collect::<Vec<_>>(),
-            &[None]
+            media.get_first_attribute_value("fmtp"),
+            Ok(Some(
+                "100 profile-level-id=42e016;max-mbps=108000;max-fs=3600"
+            ))
         );
+
+        let r = media
+            .get_attribute_values_typed("rtcp", None)
+            .collect::<Vec<Result<Rtcp, AttributeErr>>>();
+        assert_eq!(r[0].as_ref().unwrap().addrtype, AddrType::Ip4);
+        assert_eq!(r[0].as_ref().unwrap().port, 53020);
+
         assert!(media.get_attribute_values("foo").is_err());
     }
 
@@ -451,6 +1234,18 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
             session.get_first_attribute_value("rtpmap"),
             Ok(Some("99 h263-1998/90000"))
         );
+
+        let v = session
+            .get_first_attribute_value("rtpmap")
+            .unwrap()
+            .unwrap();
+        let rtpmap = RtpMap::from_str(v).unwrap();
+        assert_eq!(rtpmap.clock_rate, 90000);
+        assert_eq!(rtpmap.encoding, "h263-1998");
+        assert_ne!(rtpmap.encoding, "h263");
+        assert_ne!(rtpmap.params, Some("2".to_string()));
+        assert_eq!(rtpmap.pt, 99);
+
         assert_eq!(session.get_first_attribute_value("rtcp"), Ok(None));
         assert_eq!(
             session.get_first_attribute_value("foo"),
