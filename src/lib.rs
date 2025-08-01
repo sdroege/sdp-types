@@ -944,13 +944,40 @@ impl Media {
 
     /// Gets an iterator over all attribute values of the given name.
     /// Each item is a `Result` with the inferred type in `Ok` and `AttributeError` in `Err`
+    /// The payload type can also be passed optionally to filter an Attribute for a particular payload format
     pub fn get_attribute_values_typed<'a, T: FromStr<Err = AttributeErr>>(
         &'a self,
         name: &'a str,
+        pt: Option<&'a str>,
     ) -> impl Iterator<Item = Result<T, AttributeErr>> + 'a {
         self.attributes
             .iter()
             .filter(move |a| a.attribute == name)
+            .filter(move |a| {
+                if let Some(pt) = pt {
+                    let mut iter = self.fmt.split_ascii_whitespace();
+                    let Some(value) = a.value.as_ref() else {
+                        // does not have a value for the attribute
+                        return false;
+                    };
+
+                    let attr_pt = value.split_ascii_whitespace().next();
+
+                    let Some(attr_pt) = attr_pt else {
+                        // does not have a payload type in the attribute value
+                        return false;
+                    };
+
+                    iter.any(|fmt| {
+                        if pt == fmt && attr_pt == pt {
+                            return true;
+                        }
+                        false
+                    })
+                } else {
+                    true
+                }
+            })
             .map(|a| {
                 let Some(s) = &a.value else {
                     // does not have a value for the attribute
@@ -1128,12 +1155,18 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
         );
 
         let v = media
-            .get_attribute_values_typed("rtpmap")
+            .get_attribute_values_typed("rtpmap", None)
             .collect::<Vec<Result<RtpMap, AttributeErr>>>();
         assert_eq!(v[0].as_ref().unwrap().clock_rate, 90000);
         assert_eq!(v[1].as_ref().unwrap().encoding, "h264");
         assert_eq!(v[2], Err(AttributeErr("No value for the attribute")));
         assert_eq!(v[3].as_ref().unwrap().params.as_ref().unwrap(), "2");
+
+        let v = media
+            .get_attribute_values_typed("rtpmap", Some("99"))
+            .collect::<Vec<Result<RtpMap, AttributeErr>>>();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].as_ref().unwrap().encoding, "h263-1998");
 
         assert_eq!(
             media.get_first_attribute_value("fmtp"),
@@ -1143,7 +1176,7 @@ a=fingerprint:sha-256 3A:96:6D:57:B2:C2:C7:61:A0:46:3E:1C:97:39:D3:F7:0A:88:A0:B
         );
 
         let r = media
-            .get_attribute_values_typed("rtcp")
+            .get_attribute_values_typed("rtcp", None)
             .collect::<Vec<Result<Rtcp, AttributeErr>>>();
         assert_eq!(r[0].as_ref().unwrap().addrtype, AddrType::Ip4);
         assert_eq!(r[0].as_ref().unwrap().port, 53020);
