@@ -370,10 +370,10 @@ impl Media {
     ) -> Result<Option<Media>, ParserError> {
         let media = match lines.next()? {
             None => return Ok(None),
-            Some(line) => {
-                assert_eq!(line.key, b'm');
-                Media::parse_m_line(&line)?
-            }
+            Some(line) => match line.key {
+                b'm' => Media::parse_m_line(&line)?,
+                _ => return Err(ParserError::InvalidLineFormat(line.n, "line key not m")),
+            },
         };
 
         // As with Session::parse, be more permissive about order than RFC 8866.
