@@ -2,5 +2,11 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let _ = sdp_types::Session::parse(data);
+    let session = sdp_types::Session::parse(data);
+
+    if let Ok (s) = session {
+        // serialize the parsed session
+        let mut written = vec![];
+        s.write(&mut written).unwrap();
+    };
 });
