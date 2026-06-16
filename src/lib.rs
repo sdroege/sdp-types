@@ -86,6 +86,38 @@ pub struct Origin {
     pub unicast_address: String,
 }
 
+impl Origin {
+    /// Tries to parse the `addrtype` `String` of `self` as `AddrType`
+    pub fn try_parse_addrtype(&self) -> Result<AddrType, ParseEnumError> {
+        AddrType::from_str(self.addrtype.as_str())
+    }
+
+    /// Sets the `addrtype` `String` of `self` from the specified `AddrType`
+    pub fn set_from_addrtype(&mut self, addrtype: AddrType) {
+        self.addrtype = addrtype.to_string();
+    }
+
+    /// Tries to parse the `nettype` `String` of `self` as `NetType`
+    pub fn try_parse_nettype(&self) -> Result<NetType, ParseEnumError> {
+        NetType::from_str(self.nettype.as_str())
+    }
+
+    /// Sets the `nettype` `String` of `self` from the specified `NetType`
+    pub fn set_from_nettype(&mut self, nettype: NetType) {
+        self.nettype = nettype.to_string();
+    }
+
+    /// Tries to parse the `unicast_address` `String` of `self` as `IpAddr`
+    pub fn try_parse_unicast_address(&self) -> Result<IpAddr, AddrParseError> {
+        self.unicast_address.parse()
+    }
+
+    /// Sets the `unicast_address` `String` of `self` from the specified `IpAddr`
+    pub fn set_unicast_address(&mut self, unicast_address: IpAddr) {
+        self.unicast_address = unicast_address.to_string();
+    }
+}
+
 /// Connection data for the session or media.
 ///
 /// See [RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7) for more details.
@@ -100,6 +132,38 @@ pub struct Connection {
     pub connection_address: String,
 }
 
+impl Connection {
+    /// Tries to parse the `addrtype` `String` of `self` as `AddrType`
+    pub fn try_parse_addrtype(&self) -> Result<AddrType, ParseEnumError> {
+        AddrType::from_str(self.addrtype.as_str())
+    }
+
+    /// Sets the `addrtype` `String` of `self` from the specified `AddrType`
+    pub fn set_from_addrtype(&mut self, addrtype: AddrType) {
+        self.addrtype = addrtype.to_string();
+    }
+
+    /// Tries to parse the `nettype` `String` of `self` as `NetType`
+    pub fn try_parse_nettype(&self) -> Result<NetType, ParseEnumError> {
+        NetType::from_str(self.nettype.as_str())
+    }
+
+    /// Sets the `nettype` `String` of `self` from the specified `NetType`
+    pub fn set_from_nettype(&mut self, nettype: NetType) {
+        self.nettype = nettype.to_string();
+    }
+
+    /// Tries to parse the `connection_address` `String` of `self` as `IpAddr`
+    pub fn try_parse_connection_address(&self) -> Result<IpAddr, AddrParseError> {
+        self.connection_address.parse()
+    }
+
+    /// Sets the `connection_address` `String` of `self` from the specified `IpAddr`
+    pub fn set_connection_address(&mut self, connection_address: IpAddr) {
+        self.connection_address = connection_address.to_string();
+    }
+}
+
 /// Bandwidth information for the session or media.
 ///
 /// See [RFC 8866 Section 5.8](https://tools.ietf.org/html/rfc8866#section-5.8) for more details.
@@ -110,6 +174,18 @@ pub struct Bandwidth {
     pub bwtype: String,
     /// Bandwidth.
     pub bandwidth: u64,
+}
+
+impl Bandwidth {
+    /// Tries to parse the `bwtype` `String` of `self` as `BandwidthType`
+    pub fn try_parse_bwtype(&self) -> Result<BandwidthType, ParseEnumError> {
+        BandwidthType::from_str(self.bwtype.as_str())
+    }
+
+    /// Sets the `bwtype` `String` of `self` from the specified `BandwidthType`
+    pub fn set_from_bwtype(&mut self, bwtype: BandwidthType) {
+        self.bwtype = bwtype.to_string();
+    }
 }
 
 /// Timing information of the session.
@@ -165,6 +241,18 @@ pub struct Key {
     pub encryption_key: Option<String>,
 }
 
+impl Key {
+    /// Tries to parse the `method` `String` of `self` as `KeyMethod`
+    pub fn try_parse_keymethod(&self) -> Result<KeyMethod, ParseEnumError> {
+        KeyMethod::from_str(self.method.as_str())
+    }
+
+    /// Sets the `method` `String` of `self` from the specified `KeyMethod`
+    pub fn set_from_keymethod(&mut self, method: KeyMethod) {
+        self.method = method.to_string();
+    }
+}
+
 /// Attributes for the session or media.
 ///
 /// See [RFC 8866 Section 5.13](https://tools.ietf.org/html/rfc8866#section-5.13) for more details.
@@ -203,40 +291,6 @@ pub struct Media {
     pub key: Option<Key>,
     /// Attributes of the media.
     pub attributes: Vec<Attribute>,
-}
-
-/// SDP session description.
-///
-/// See [RFC 8866 Section 5](https://tools.ietf.org/html/rfc8866#section-5) for more details.
-#[derive(Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Session {
-    /// Originator of the session.
-    pub origin: Origin,
-    /// Name of the session.
-    pub session_name: String,
-    /// Session description.
-    pub session_description: Option<String>,
-    /// URI to additional information about the session.
-    pub uri: Option<String>,
-    /// E-Mail contacts for the session.
-    pub emails: Vec<String>,
-    /// Phone contacts for the session.
-    pub phones: Vec<String>,
-    /// Connection data for the session.
-    pub connection: Option<Connection>,
-    /// Bandwidth information for the session.
-    pub bandwidths: Vec<Bandwidth>,
-    /// Timing information for the session.
-    pub times: Vec<Time>,
-    /// Time zone information for the session.
-    pub time_zones: Vec<TimeZone>,
-    /// Encryption key for the session.
-    pub key: Option<Key>,
-    /// Attributes of the session.
-    pub attributes: Vec<Attribute>,
-    /// Media descriptions for this session.
-    pub medias: Vec<Media>,
 }
 
 /// Error returned when an attribute is not found.
@@ -332,6 +386,40 @@ impl Media {
     }
 }
 
+/// SDP session description.
+///
+/// See [RFC 8866 Section 5](https://tools.ietf.org/html/rfc8866#section-5) for more details.
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Session {
+    /// Originator of the session.
+    pub origin: Origin,
+    /// Name of the session.
+    pub session_name: String,
+    /// Session description.
+    pub session_description: Option<String>,
+    /// URI to additional information about the session.
+    pub uri: Option<String>,
+    /// E-Mail contacts for the session.
+    pub emails: Vec<String>,
+    /// Phone contacts for the session.
+    pub phones: Vec<String>,
+    /// Connection data for the session.
+    pub connection: Option<Connection>,
+    /// Bandwidth information for the session.
+    pub bandwidths: Vec<Bandwidth>,
+    /// Timing information for the session.
+    pub times: Vec<Time>,
+    /// Time zone information for the session.
+    pub time_zones: Vec<TimeZone>,
+    /// Encryption key for the session.
+    pub key: Option<Key>,
+    /// Attributes of the session.
+    pub attributes: Vec<Attribute>,
+    /// Media descriptions for this session.
+    pub medias: Vec<Media>,
+}
+
 impl Session {
     /// Checks if the given attribute exists.
     pub fn has_attribute(&self, name: &str) -> bool {
@@ -389,94 +477,6 @@ impl Session {
 
                 T::from_str(s)
             })
-    }
-}
-
-impl Origin {
-    /// Tries to parse the `addrtype` `String` of `self` as `AddrType`
-    pub fn try_parse_addrtype(&self) -> Result<AddrType, ParseEnumError> {
-        AddrType::from_str(self.addrtype.as_str())
-    }
-
-    /// Sets the `addrtype` `String` of `self` from the specified `AddrType`
-    pub fn set_from_addrtype(&mut self, addrtype: AddrType) {
-        self.addrtype = addrtype.to_string();
-    }
-
-    /// Tries to parse the `nettype` `String` of `self` as `NetType`
-    pub fn try_parse_nettype(&self) -> Result<NetType, ParseEnumError> {
-        NetType::from_str(self.nettype.as_str())
-    }
-
-    /// Sets the `nettype` `String` of `self` from the specified `NetType`
-    pub fn set_from_nettype(&mut self, nettype: NetType) {
-        self.nettype = nettype.to_string();
-    }
-
-    /// Tries to parse the `unicast_address` `String` of `self` as `IpAddr`
-    pub fn try_parse_unicast_address(&self) -> Result<IpAddr, AddrParseError> {
-        self.unicast_address.parse()
-    }
-
-    /// Sets the `unicast_address` `String` of `self` from the specified `IpAddr`
-    pub fn set_unicast_address(&mut self, unicast_address: IpAddr) {
-        self.unicast_address = unicast_address.to_string();
-    }
-}
-
-impl Connection {
-    /// Tries to parse the `addrtype` `String` of `self` as `AddrType`
-    pub fn try_parse_addrtype(&self) -> Result<AddrType, ParseEnumError> {
-        AddrType::from_str(self.addrtype.as_str())
-    }
-
-    /// Sets the `addrtype` `String` of `self` from the specified `AddrType`
-    pub fn set_from_addrtype(&mut self, addrtype: AddrType) {
-        self.addrtype = addrtype.to_string();
-    }
-
-    /// Tries to parse the `nettype` `String` of `self` as `NetType`
-    pub fn try_parse_nettype(&self) -> Result<NetType, ParseEnumError> {
-        NetType::from_str(self.nettype.as_str())
-    }
-
-    /// Sets the `nettype` `String` of `self` from the specified `NetType`
-    pub fn set_from_nettype(&mut self, nettype: NetType) {
-        self.nettype = nettype.to_string();
-    }
-
-    /// Tries to parse the `connection_address` `String` of `self` as `IpAddr`
-    pub fn try_parse_connection_address(&self) -> Result<IpAddr, AddrParseError> {
-        self.connection_address.parse()
-    }
-
-    /// Sets the `connection_address` `String` of `self` from the specified `IpAddr`
-    pub fn set_connection_address(&mut self, connection_address: IpAddr) {
-        self.connection_address = connection_address.to_string();
-    }
-}
-
-impl Bandwidth {
-    /// Tries to parse the `bwtype` `String` of `self` as `BandwidthType`
-    pub fn try_parse_bwtype(&self) -> Result<BandwidthType, ParseEnumError> {
-        BandwidthType::from_str(self.bwtype.as_str())
-    }
-
-    /// Sets the `bwtype` `String` of `self` from the specified `BandwidthType`
-    pub fn set_from_bwtype(&mut self, bwtype: BandwidthType) {
-        self.bwtype = bwtype.to_string();
-    }
-}
-
-impl Key {
-    /// Tries to parse the `method` `String` of `self` as `KeyMethod`
-    pub fn try_parse_keymethod(&self) -> Result<KeyMethod, ParseEnumError> {
-        KeyMethod::from_str(self.method.as_str())
-    }
-
-    /// Sets the `method` `String` of `self` from the specified `KeyMethod`
-    pub fn set_from_keymethod(&mut self, method: KeyMethod) {
-        self.method = method.to_string();
     }
 }
 
