@@ -14,6 +14,18 @@
 //!     ...
 //! };
 //!
+//! // or
+//! let sdp = sdp_types::Session::new(sdp_types::Origin::new(...), "my-session");
+//!
+//! // or
+//! let sdp = sdp_types::Session::builder(sdp_types::Origin::new(...), "my-session")
+//!     .attribute(...)
+//!     .attribute(...)
+//!     .media(...)
+//!     .media(...)
+//!     ...
+//!     .build();
+//!
 //! // And write it to an `Vec<u8>`
 //! let mut output = Vec::new();
 //! sdp.write(&mut output).unwrap();
@@ -54,6 +66,7 @@ use bstr::*;
 use fallible_iterator::FallibleIterator;
 
 pub mod attributes;
+pub mod builders;
 pub mod enums;
 mod parser;
 mod writer;
@@ -85,14 +98,49 @@ pub struct Origin {
 }
 
 impl Origin {
+    /// Construct an [`Origin`] with the specified IP `unicast_address`
+    pub fn with_ip_addr(
+        sess_id: impl ToString,
+        sess_version: u64,
+        unicast_address: impl Into<IpAddr>,
+    ) -> Self {
+        let unicast_address = unicast_address.into();
+        Origin {
+            username: Default::default(),
+            sess_id: sess_id.to_string(),
+            sess_version,
+            nettype: NetType::In,
+            addrtype: unicast_address.into(),
+            unicast_address: unicast_address.to_string(),
+        }
+    }
+
+    /// Construct an [`Origin`]
+    ///
+    /// See also [`Origin::with_ip_addr`]
+    pub fn new(
+        sess_id: impl ToString,
+        sess_version: u64,
+        nettype: NetType,
+        addrtype: AddrType,
+        unicast_address: impl ToString,
+    ) -> Self {
+        Origin {
+            username: Default::default(),
+            sess_id: sess_id.to_string(),
+            sess_version,
+            nettype,
+            addrtype,
+            unicast_address: unicast_address.to_string(),
+        }
+    }
+
     /// Sets the `unicast_address` & `addrtype` of `self` from the specified `IpAddr`
     pub fn set_unicast_ip_address(&mut self, unicast_address: impl Into<IpAddr>) {
         let unicast_address = unicast_address.into();
         self.addrtype = unicast_address.into();
         self.unicast_address = unicast_address.to_string();
     }
-
-    /// Tries to parse the `unicast_address` `String` of `self` as `IpAddr`
     ///
     /// Returns the `Ok` with the parsed `IpAddr` or `Err` with the string address
     /// if parsing failed.
@@ -100,6 +148,32 @@ impl Origin {
         self.unicast_address
             .parse::<IpAddr>()
             .map_err(|_| self.unicast_address.as_str())
+    }
+
+    pub fn set_username(&mut self, username: impl ToString) {
+        self.username = Some(username.to_string());
+    }
+
+    /// Construct an [`crate::builders::Origin`] with the specified IP `unicast_address`
+    pub fn builder_with_ip_addr(
+        sess_id: impl ToString,
+        sess_version: u64,
+        unicast_address: impl Into<IpAddr>,
+    ) -> builders::Origin {
+        builders::Origin::with_ip_addr(sess_id, sess_version, unicast_address)
+    }
+
+    /// Construct an [`crate::builders::Origin`]
+    ///
+    /// See also [`Origin::builder_with_ip_addr`]
+    pub fn builder(
+        sess_id: impl ToString,
+        sess_version: u64,
+        nettype: NetType,
+        addrtype: AddrType,
+        unicast_address: impl ToString,
+    ) -> builders::Origin {
+        builders::Origin::new(sess_id, sess_version, nettype, addrtype, unicast_address)
     }
 }
 
@@ -118,6 +192,27 @@ pub struct Connection {
 }
 
 impl Connection {
+    /// Construct a [`Connection`] with the specified IP `connection_address`
+    pub fn from_ip_addr(connection_address: impl Into<IpAddr>) -> Self {
+        let connection_address = connection_address.into();
+        Connection {
+            nettype: NetType::In,
+            addrtype: connection_address.into(),
+            connection_address: connection_address.to_string(),
+        }
+    }
+
+    /// Construct a [`Connection`]
+    ///
+    /// See also [`Connection::from_ip_addr`]
+    pub fn new(nettype: NetType, addrtype: AddrType, connection_address: impl ToString) -> Self {
+        Connection {
+            nettype,
+            addrtype,
+            connection_address: connection_address.to_string(),
+        }
+    }
+
     /// Sets the `connection_address` & `addrtype` of `self` from the specified `IpAddr`
     pub fn set_connection_ip_address(&mut self, connection_address: impl Into<IpAddr>) {
         let connection_address = connection_address.into();
@@ -136,6 +231,12 @@ impl Connection {
     }
 }
 
+impl<T: Into<IpAddr>> From<T> for Connection {
+    fn from(ip_addr: T) -> Self {
+        Connection::from_ip_addr(ip_addr)
+    }
+}
+
 /// Bandwidth information for the session or media.
 ///
 /// See [RFC 8866 Section 5.8](https://tools.ietf.org/html/rfc8866#section-5.8) for more details.
@@ -149,6 +250,13 @@ pub struct Bandwidth {
 }
 
 impl Bandwidth {
+    pub fn new(bwtype: BandwidthType, bandwidth: u64) -> Self {
+        Bandwidth {
+            bwtype: bwtype.to_string(),
+            bandwidth,
+        }
+    }
+
     /// Tries to parse the `bwtype` `String` of `self` as `BandwidthType`
     pub fn try_parse_bwtype(&self) -> Result<BandwidthType, ParseEnumError> {
         BandwidthType::from_str(self.bwtype.as_str())
@@ -174,6 +282,28 @@ pub struct Time {
     pub repeats: Vec<Repeat>,
 }
 
+impl Time {
+    pub fn new(start_time: u64, stop_time: u64) -> Self {
+        Time {
+            start_time,
+            stop_time,
+            repeats: Default::default(),
+        }
+    }
+
+    pub fn add_repeat(&mut self, repeat: Repeat) {
+        self.repeats.push(repeat);
+    }
+
+    pub fn add_repeats(&mut self, repeats: impl IntoIterator<Item = Repeat>) {
+        self.repeats.extend(repeats)
+    }
+
+    pub fn builder(start_time: u64, stop_time: u64) -> builders::Time {
+        builders::Time::new(start_time, stop_time)
+    }
+}
+
 /// Repeat times for timing information.
 ///
 /// See [RFC 8866 Section 5.10](https://tools.ietf.org/html/rfc8866#section-5.10) for more details.
@@ -188,6 +318,28 @@ pub struct Repeat {
     pub offsets: Vec<u64>,
 }
 
+impl Repeat {
+    pub fn new(repeat_interval: u64, active_duration: u64) -> Self {
+        Repeat {
+            repeat_interval,
+            active_duration,
+            offsets: Default::default(),
+        }
+    }
+
+    pub fn add_offset(&mut self, offset: u64) {
+        self.offsets.push(offset);
+    }
+
+    pub fn add_offsets(&mut self, offsets: impl IntoIterator<Item = u64>) {
+        self.offsets.extend(offsets)
+    }
+
+    pub fn builder(repeat_interval: u64, active_duration: u64) -> builders::Repeat {
+        builders::Repeat::new(repeat_interval, active_duration)
+    }
+}
+
 /// Time zone information for the session.
 ///
 /// See [RFC 8866 Section 5.11](https://tools.ietf.org/html/rfc8866#section-5.11) for more details.
@@ -198,6 +350,15 @@ pub struct TimeZone {
     pub adjustment_time: u64,
     /// Amount of the adjustment in seconds.
     pub offset: i64,
+}
+
+impl TimeZone {
+    pub fn new(adjustment_time: u64, offset: i64) -> Self {
+        TimeZone {
+            adjustment_time,
+            offset,
+        }
+    }
 }
 
 /// Encryption key for the session or media.
@@ -214,6 +375,21 @@ pub struct Key {
 }
 
 impl Key {
+    pub fn new(method: KeyMethod) -> Self {
+        Key {
+            method: method.to_string(),
+            encryption_key: Default::default(),
+        }
+    }
+
+    /// Constructs a [`crate::Key`] and define its `encryption_key`.
+    pub fn with_encryption_key(method: KeyMethod, encryption_key: impl ToString) -> Self {
+        Key {
+            method: method.to_string(),
+            encryption_key: Some(encryption_key.to_string()),
+        }
+    }
+
     /// Tries to parse the `method` `String` of `self` as `KeyMethod`
     pub fn try_parse_keymethod(&self) -> Result<KeyMethod, ParseEnumError> {
         KeyMethod::from_str(self.method.as_str())
@@ -222,6 +398,15 @@ impl Key {
     /// Sets the `method` `String` of `self` from the specified `KeyMethod`
     pub fn set_keymethod(&mut self, method: KeyMethod) {
         self.method = method.to_string();
+    }
+}
+
+impl From<KeyMethod> for Key {
+    fn from(method: KeyMethod) -> Self {
+        Key {
+            method: method.to_string(),
+            encryption_key: None,
+        }
     }
 }
 
@@ -235,6 +420,26 @@ pub struct Attribute {
     pub attribute: String,
     /// Attribute value.
     pub value: Option<String>,
+}
+
+impl Attribute {
+    /// Constructs an [`crate::Attribute`].
+    ///
+    /// Use [`crate::Attribute::with_value`] if you need to define the `value`.
+    pub fn new(attribute: impl ToString) -> Self {
+        Attribute {
+            attribute: attribute.to_string(),
+            value: Default::default(),
+        }
+    }
+
+    /// Constructs an [`crate::Attribute`] and define its `value`.
+    pub fn with_value(attribute: impl ToString, value: impl ToString) -> Self {
+        Attribute {
+            attribute: attribute.to_string(),
+            value: Some(value.to_string()),
+        }
+    }
 }
 
 /// Media description.
@@ -279,6 +484,88 @@ impl std::fmt::Display for AttributeNotFoundError {
 }
 
 impl Media {
+    pub fn new(media: MediaType, port: u16, proto: TransportProto, fmt: impl ToString) -> Self {
+        Media {
+            media: media.to_string(),
+            port,
+            num_ports: Default::default(),
+            proto: proto.to_string(),
+            fmt: fmt.to_string(),
+            media_title: Default::default(),
+            connections: Default::default(),
+            bandwidths: Default::default(),
+            key: Default::default(),
+            attributes: Default::default(),
+        }
+    }
+
+    pub fn builder(
+        media: MediaType,
+        port: u16,
+        proto: TransportProto,
+        fmt: impl ToString,
+    ) -> builders::Media {
+        builders::Media::new(media, port, proto, fmt)
+    }
+
+    pub fn set_num_ports(&mut self, num_ports: u16) {
+        self.num_ports = Some(num_ports);
+    }
+
+    pub fn set_media_title(&mut self, media_title: impl ToString) {
+        self.media_title = Some(media_title.to_string());
+    }
+
+    pub fn add_connection(&mut self, connection: impl Into<Connection>) {
+        self.connections.push(connection.into());
+    }
+
+    pub fn add_connections(
+        &mut self,
+        connections: impl IntoIterator<Item = impl Into<Connection>>,
+    ) {
+        self.connections
+            .extend(connections.into_iter().map(|c| c.into()))
+    }
+
+    pub fn add_bandwidth(&mut self, bandwidth: Bandwidth) {
+        self.bandwidths.push(bandwidth);
+    }
+
+    pub fn add_bandwidths(&mut self, bandwidths: impl IntoIterator<Item = Bandwidth>) {
+        self.bandwidths.extend(bandwidths)
+    }
+
+    pub fn set_encryption_key(&mut self, key: impl Into<Key>) {
+        self.key = Some(key.into());
+    }
+
+    pub fn add_attribute(&mut self, attribute: impl Into<Attribute>) {
+        self.attributes.push(attribute.into());
+    }
+
+    pub fn add_attribute_from_str(&mut self, attribute: impl ToString) {
+        self.attributes.push(Attribute::new(attribute));
+    }
+
+    pub fn add_attribute_with_value(&mut self, attribute: impl ToString, value: impl ToString) {
+        self.attributes
+            .push(Attribute::with_value(attribute, value));
+    }
+
+    pub fn add_attributes(&mut self, attributes: impl IntoIterator<Item = impl Into<Attribute>>) {
+        self.attributes
+            .extend(attributes.into_iter().map(|a| a.into()))
+    }
+
+    pub fn add_attributes_from_strs(
+        &mut self,
+        attributes: impl IntoIterator<Item = impl ToString>,
+    ) {
+        self.attributes
+            .extend(attributes.into_iter().map(|a| Attribute::new(a)))
+    }
+
     /// Checks if the given attribute exists.
     pub fn has_attribute(&self, name: &str) -> bool {
         self.attributes.iter().any(|a| a.attribute == name)
@@ -393,6 +680,120 @@ pub struct Session {
 }
 
 impl Session {
+    pub fn new(origin: Origin, session_name: impl ToString) -> Self {
+        Session {
+            origin,
+            session_name: session_name.to_string(),
+            session_description: Default::default(),
+            uri: Default::default(),
+            emails: Default::default(),
+            phones: Default::default(),
+            connection: Default::default(),
+            bandwidths: Default::default(),
+            times: Default::default(),
+            time_zones: Default::default(),
+            key: Default::default(),
+            attributes: Default::default(),
+            medias: Default::default(),
+        }
+    }
+
+    pub fn builder(origin: Origin, session_name: impl ToString) -> builders::Session {
+        builders::Session::new(origin, session_name)
+    }
+
+    pub fn set_session_description(&mut self, session_description: impl ToString) {
+        self.session_description = Some(session_description.to_string());
+    }
+
+    pub fn set_uri(&mut self, uri: impl ToString) {
+        self.uri = Some(uri.to_string());
+    }
+
+    pub fn add_email(&mut self, email: impl ToString) {
+        self.emails.push(email.to_string());
+    }
+
+    pub fn add_emails(&mut self, emails: impl IntoIterator<Item = impl ToString>) {
+        self.emails
+            .extend(emails.into_iter().map(|e| e.to_string()));
+    }
+
+    pub fn add_phone(&mut self, phone: impl ToString) {
+        self.phones.push(phone.to_string());
+    }
+
+    pub fn add_phones(&mut self, phones: impl IntoIterator<Item = impl ToString>) {
+        self.phones
+            .extend(phones.into_iter().map(|p| p.to_string()));
+    }
+
+    pub fn set_connection(&mut self, connection: impl Into<Connection>) {
+        self.connection = Some(connection.into());
+    }
+
+    pub fn add_bandwidth(&mut self, bandwidth: Bandwidth) {
+        self.bandwidths.push(bandwidth);
+    }
+
+    pub fn add_bandwidths(&mut self, bandwidths: impl IntoIterator<Item = Bandwidth>) {
+        self.bandwidths.extend(bandwidths);
+    }
+
+    pub fn add_time(&mut self, time: Time) {
+        self.times.push(time);
+    }
+
+    pub fn add_times(&mut self, times: impl IntoIterator<Item = Time>) {
+        self.times.extend(times);
+    }
+
+    pub fn add_time_zone(&mut self, time_zone: TimeZone) {
+        self.time_zones.push(time_zone);
+    }
+
+    pub fn add_time_zones(&mut self, time_zones: impl IntoIterator<Item = TimeZone>) {
+        self.time_zones.extend(time_zones);
+    }
+
+    pub fn set_encryption_key(&mut self, key: impl Into<Key>) {
+        self.key = Some(key.into());
+    }
+
+    pub fn add_attribute(&mut self, attribute: impl Into<Attribute>) {
+        self.attributes.push(attribute.into());
+    }
+
+    pub fn add_attribute_from_str(&mut self, attribute: impl ToString) {
+        self.attributes.push(Attribute::new(attribute));
+    }
+
+    pub fn add_attribute_with_value(&mut self, attribute: impl ToString, value: impl ToString) {
+        self.attributes
+            .push(Attribute::with_value(attribute, value));
+    }
+
+    pub fn add_attributes(&mut self, attributes: impl IntoIterator<Item = impl Into<Attribute>>) {
+        self.attributes
+            .extend(attributes.into_iter().map(|a| a.into()))
+    }
+
+    pub fn add_attributes_from_strs(
+        &mut self,
+        attributes: impl IntoIterator<Item = impl ToString>,
+    ) {
+        self.attributes
+            .extend(attributes.into_iter().map(|a| Attribute::new(a)))
+    }
+
+    pub fn add_media(&mut self, media: Media) {
+        self.medias.push(media);
+    }
+
+    pub fn add_medias(&mut self, medias: impl IntoIterator<Item = Media>) {
+        self.medias.extend(medias)
+    }
+
     /// Checks if the given attribute exists.
     pub fn has_attribute(&self, name: &str) -> bool {
         self.attributes.iter().any(|a| a.attribute == name)
