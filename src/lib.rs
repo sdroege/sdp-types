@@ -93,7 +93,7 @@ impl Origin {
     }
 
     /// Sets the `addrtype` `String` of `self` from the specified `AddrType`
-    pub fn set_from_addrtype(&mut self, addrtype: AddrType) {
+    pub fn set_addrtype(&mut self, addrtype: AddrType) {
         self.addrtype = addrtype.to_string();
     }
 
@@ -103,7 +103,7 @@ impl Origin {
     }
 
     /// Sets the `nettype` `String` of `self` from the specified `NetType`
-    pub fn set_from_nettype(&mut self, nettype: NetType) {
+    pub fn set_nettype(&mut self, nettype: NetType) {
         self.nettype = nettype.to_string();
     }
 
@@ -139,7 +139,7 @@ impl Connection {
     }
 
     /// Sets the `addrtype` `String` of `self` from the specified `AddrType`
-    pub fn set_from_addrtype(&mut self, addrtype: AddrType) {
+    pub fn set_addrtype(&mut self, addrtype: AddrType) {
         self.addrtype = addrtype.to_string();
     }
 
@@ -149,7 +149,7 @@ impl Connection {
     }
 
     /// Sets the `nettype` `String` of `self` from the specified `NetType`
-    pub fn set_from_nettype(&mut self, nettype: NetType) {
+    pub fn set_nettype(&mut self, nettype: NetType) {
         self.nettype = nettype.to_string();
     }
 
@@ -183,7 +183,7 @@ impl Bandwidth {
     }
 
     /// Sets the `bwtype` `String` of `self` from the specified `BandwidthType`
-    pub fn set_from_bwtype(&mut self, bwtype: BandwidthType) {
+    pub fn set_bwtype(&mut self, bwtype: BandwidthType) {
         self.bwtype = bwtype.to_string();
     }
 }
@@ -248,7 +248,7 @@ impl Key {
     }
 
     /// Sets the `method` `String` of `self` from the specified `KeyMethod`
-    pub fn set_from_keymethod(&mut self, method: KeyMethod) {
+    pub fn set_keymethod(&mut self, method: KeyMethod) {
         self.method = method.to_string();
     }
 }
@@ -348,7 +348,7 @@ impl Media {
     }
 
     /// Sets the `media` `String` of `self` from the specified `MediaType`
-    pub fn set_from_mediatype(&mut self, media: MediaType) {
+    pub fn set_mediatype(&mut self, media: MediaType) {
         self.media = media.to_string();
     }
 
@@ -358,7 +358,7 @@ impl Media {
     }
 
     /// Sets the `proto` `String` of `self` from the specified `TransportProto`
-    pub fn set_from_transport_proto(&mut self, proto: TransportProto) {
+    pub fn set_transport_proto(&mut self, proto: TransportProto) {
         self.proto = proto.to_string();
     }
 
