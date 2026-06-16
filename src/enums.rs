@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
 };
 
-use crate::attributes::SrtpKeyParam;
+use crate::{attributes::SrtpKeyParam, TypedAttribute};
 
 /// Errors while parsing strings to Enum
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -110,6 +110,17 @@ pub enum AddrType {
 }
 
 impl AddrType {
+    pub fn new(addrtype: impl AsRef<str>) -> Self {
+        let addrtype = addrtype.as_ref();
+        if "IP4".eq_ignore_ascii_case(addrtype) {
+            AddrType::Ip4
+        } else if "IP6".eq_ignore_ascii_case(addrtype) {
+            AddrType::Ip6
+        } else {
+            AddrType::Other(addrtype.to_string())
+        }
+    }
+
     /// Whether `self` matches an IPv4 or IPv6 address.
     pub fn is_ip(&self) -> bool {
         matches!(self, AddrType::Ip4 | AddrType::Ip6)
@@ -392,6 +403,43 @@ pub enum HashFunc {
     Other(String),
 }
 
+impl HashFunc {
+    pub fn new(hash_func: impl AsRef<str>) -> Self {
+        let hash_func = hash_func.as_ref();
+
+        if hash_func.eq_ignore_ascii_case("sha-1") {
+            HashFunc::SHA1
+        } else if hash_func.eq_ignore_ascii_case("sha-224") {
+            HashFunc::SHA224
+        } else if hash_func.eq_ignore_ascii_case("sha-256") {
+            HashFunc::SHA256
+        } else if hash_func.eq_ignore_ascii_case("sha-384") {
+            HashFunc::SHA384
+        } else if hash_func.eq_ignore_ascii_case("sha-512") {
+            HashFunc::SHA512
+        } else if hash_func.eq_ignore_ascii_case("md-5") {
+            HashFunc::MD5
+        } else if hash_func.eq_ignore_ascii_case("md-2") {
+            HashFunc::MD2
+        } else {
+            HashFunc::Other(hash_func.to_string())
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            HashFunc::SHA1 => "sha-1",
+            HashFunc::SHA224 => "sha-224",
+            HashFunc::SHA256 => "sha-256",
+            HashFunc::SHA384 => "sha-384",
+            HashFunc::SHA512 => "sha-512",
+            HashFunc::MD5 => "md-5",
+            HashFunc::MD2 => "md-2",
+            HashFunc::Other(s) => s.as_str(),
+        }
+    }
+}
+
 /// Semantics for Group Attribute
 ///
 /// See [RFC 5576 Section 12.3](https://datatracker.ietf.org/doc/html/rfc5576#section-12.3)
@@ -426,6 +474,40 @@ pub enum GroupSemantics {
     Other(String),
 }
 
+impl GroupSemantics {
+    pub fn new(semantics: impl AsRef<str>) -> Self {
+        let semantics = semantics.as_ref();
+
+        if "LS".eq_ignore_ascii_case(semantics) {
+            GroupSemantics::LS
+        } else if "FID".eq_ignore_ascii_case(semantics) {
+            GroupSemantics::FID
+        } else if "SRF".eq_ignore_ascii_case(semantics) {
+            GroupSemantics::SRF
+        } else if "ANAT".eq_ignore_ascii_case(semantics) {
+            GroupSemantics::ANAT
+        } else if "FEC".eq_ignore_ascii_case(semantics) {
+            GroupSemantics::FEC
+        } else if "DDP".eq_ignore_ascii_case(semantics) {
+            GroupSemantics::DDP
+        } else {
+            GroupSemantics::Other(semantics.to_string())
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            GroupSemantics::LS => "LS",
+            GroupSemantics::FID => "FID",
+            GroupSemantics::SRF => "SRF",
+            GroupSemantics::ANAT => "ANAT",
+            GroupSemantics::DDP => "DDP",
+            GroupSemantics::FEC => "FEC",
+            GroupSemantics::Other(s) => s.as_str(),
+        }
+    }
+}
+
 /// Encryption and authentication algorithms for Crypto attribute
 ///
 /// See [RFC 4568 Section 10.3.2](https://datatracker.ietf.org/doc/html/rfc4568#section-10.3.2)
@@ -444,6 +526,31 @@ pub enum CryptoSuite {
     F8_128HmacSha1_80,
     /// Other Crypto Suite
     Other(String),
+}
+
+impl CryptoSuite {
+    pub fn new(crypto_suite: impl AsRef<str>) -> Self {
+        let crypto_suite = crypto_suite.as_ref();
+
+        if "AES_CM_128_HMAC_SHA1_32".eq_ignore_ascii_case(crypto_suite) {
+            CryptoSuite::AesCm128HmacSha1_32
+        } else if "F8_128_HMAC_SHA1_80".eq_ignore_ascii_case(crypto_suite) {
+            CryptoSuite::F8_128HmacSha1_80
+        } else if "AES_CM_128_HMAC_SHA1_80".eq_ignore_ascii_case(crypto_suite) {
+            CryptoSuite::AesCm128HmacSha1_80
+        } else {
+            CryptoSuite::Other(crypto_suite.to_string())
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            CryptoSuite::AesCm128HmacSha1_80 => "AES_CM_128_HMAC_SHA1_80",
+            CryptoSuite::AesCm128HmacSha1_32 => "AES_CM_128_HMAC_SHA1_32",
+            CryptoSuite::F8_128HmacSha1_80 => "F8_128_HMAC_SHA1_80",
+            CryptoSuite::Other(s) => s.as_str(),
+        }
+    }
 }
 
 /// Signals whether FEC is applied before or after SRTP processing
@@ -512,6 +619,34 @@ pub enum CandidateType {
     Relay,
     /// Unknown type
     Other(String),
+}
+
+impl CandidateType {
+    pub fn new(cand_type: impl AsRef<str>) -> Self {
+        let cand_type = cand_type.as_ref();
+
+        if "host".eq_ignore_ascii_case(cand_type) {
+            CandidateType::Host
+        } else if "srflx".eq_ignore_ascii_case(cand_type) {
+            CandidateType::Srflx
+        } else if "prflx".eq_ignore_ascii_case(cand_type) {
+            CandidateType::Prflx
+        } else if "relay".eq_ignore_ascii_case(cand_type) {
+            CandidateType::Relay
+        } else {
+            CandidateType::Other(cand_type.to_string())
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            CandidateType::Host => "host",
+            CandidateType::Srflx => "srflx",
+            CandidateType::Prflx => "prflx",
+            CandidateType::Relay => "relay",
+            CandidateType::Other(o) => o.as_str(),
+        }
+    }
 }
 
 /// RTCP Positive feedback values
@@ -681,6 +816,27 @@ pub enum SsrcAttribute {
     Fmtp,
     /// See [RFC 5576 Section 6.4](https://datatracker.ietf.org/doc/html/rfc5576#section-6.4)
     Other(String),
+}
+
+impl SsrcAttribute {
+    pub fn new(attribute: impl AsRef<str>) -> Self {
+        let attr = attribute.as_ref();
+        if "cname".eq_ignore_ascii_case(attr) {
+            SsrcAttribute::Cname
+        } else if "previous-ssrc".eq_ignore_ascii_case(attr) {
+            SsrcAttribute::PreviousSsrc
+        } else if "fmtp".eq_ignore_ascii_case(attr) {
+            SsrcAttribute::Fmtp
+        } else {
+            SsrcAttribute::Other(attr.to_string())
+        }
+    }
+}
+
+impl<T: TypedAttribute> From<T> for SsrcAttribute {
+    fn from(_attr: T) -> Self {
+        SsrcAttribute::new(T::NAME)
+    }
 }
 
 /// Payload format for which feedback messages may be used

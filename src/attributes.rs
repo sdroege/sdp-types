@@ -10,11 +10,20 @@ use std::{
     str::FromStr,
 };
 
-use crate::enums::*;
+use crate::{builders, enums::*, Attribute};
 
 /// Trait for Typed Attribute structs
 pub trait TypedAttribute: Display + FromStr<Err = AttributeError> {
     const NAME: &'static str;
+}
+
+impl<T: TypedAttribute> From<T> for Attribute {
+    fn from(attr: T) -> Attribute {
+        Attribute {
+            attribute: T::NAME.to_string(),
+            value: Some(attr.to_string()),
+        }
+    }
 }
 
 /// Attribute error with specific details
@@ -62,6 +71,43 @@ pub struct RtpMap {
     ///
     /// Currently used only for audio channel count
     pub encoding_params: Option<String>,
+}
+
+impl RtpMap {
+    pub fn new(payload_type: u8, encoding_name: impl ToString, clock_rate: u32) -> Self {
+        RtpMap {
+            payload_type,
+            encoding_name: encoding_name.to_string(),
+            clock_rate,
+            encoding_params: None,
+        }
+    }
+
+    pub fn builder(
+        payload_type: u8,
+        encoding_name: impl ToString,
+        clock_rate: u32,
+    ) -> builders::RtpMap {
+        builders::RtpMap::new(payload_type, encoding_name, clock_rate)
+    }
+
+    pub fn with_encoding_params(
+        payload_type: u8,
+        encoding_name: impl ToString,
+        clock_rate: u32,
+        encoding_params: impl ToString,
+    ) -> Self {
+        RtpMap {
+            payload_type,
+            encoding_name: encoding_name.to_string(),
+            clock_rate,
+            encoding_params: Some(encoding_params.to_string()),
+        }
+    }
+
+    pub fn set_encoding_params(&mut self, encoding_params: impl ToString) {
+        self.encoding_params = Some(encoding_params.to_string());
+    }
 }
 
 impl FromStr for RtpMap {
@@ -152,6 +198,30 @@ pub struct FmtpParam {
     pub val: Option<String>,
 }
 
+impl FmtpParam {
+    pub fn new(param: impl ToString) -> Self {
+        FmtpParam {
+            param: param.to_string(),
+            val: None,
+        }
+    }
+
+    pub fn builder(param: impl ToString) -> builders::FmtpParam {
+        builders::FmtpParam::new(param)
+    }
+
+    pub fn with_value(param: impl ToString, value: impl ToString) -> Self {
+        FmtpParam {
+            param: param.to_string(),
+            val: Some(value.to_string()),
+        }
+    }
+
+    pub fn set_value(&mut self, value: impl ToString) {
+        self.val = Some(value.to_string());
+    }
+}
+
 /// Format Parameters
 ///
 /// See [RFC 8866 Section 6.15](https://datatracker.ietf.org/doc/html/rfc8866#section-6.15) for more details
@@ -164,6 +234,30 @@ pub struct Fmtp {
     // Multiple params are expected to be semicolon separated
     // Each param can be a 'key=value' pair or just single parameter
     pub format_specific_params: Vec<FmtpParam>,
+}
+
+impl Fmtp {
+    pub fn new(fmt: u8) -> Self {
+        Fmtp {
+            fmt,
+            format_specific_params: vec![],
+        }
+    }
+
+    pub fn builder(fmt: u8) -> builders::Fmtp {
+        builders::Fmtp::new(fmt)
+    }
+
+    pub fn add_format_specific_param(&mut self, format_specific_param: FmtpParam) {
+        self.format_specific_params.push(format_specific_param)
+    }
+
+    pub fn add_format_specific_params(
+        &mut self,
+        format_specific_params: impl IntoIterator<Item = FmtpParam>,
+    ) {
+        self.format_specific_params.extend(format_specific_params)
+    }
 }
 
 impl FromStr for Fmtp {
@@ -250,11 +344,32 @@ pub struct Rtcp {
 }
 
 impl Rtcp {
-    /// Sets the `connection_address` & `addrtype` of `self` from the specified `IpAddr`
-    pub fn set_connection_ip_address(&mut self, connection_address: impl Into<IpAddr>) {
+    /// Construct an [`Rtcp`] with the specified IP `connection_address`
+    pub fn with_ip_addr(port: u16, connection_address: impl Into<IpAddr>) -> Self {
         let connection_address = connection_address.into();
-        self.addrtype = connection_address.into();
-        self.connection_address = connection_address.to_string();
+        Rtcp {
+            port,
+            nettype: NetType::In,
+            addrtype: connection_address.into(),
+            connection_address: connection_address.to_string(),
+        }
+    }
+
+    /// Construct an [`Rtcp`]
+    ///
+    /// See also [`Rtcp::with_ip_addr`]
+    pub fn new(
+        port: u16,
+        nettype: NetType,
+        addrtype: AddrType,
+        connection_address: impl ToString,
+    ) -> Self {
+        Rtcp {
+            port,
+            nettype,
+            addrtype,
+            connection_address: connection_address.to_string(),
+        }
     }
 
     /// Tries to parse the `connection_address` `String` of `self` as `IpAddr`
@@ -265,6 +380,13 @@ impl Rtcp {
         self.connection_address
             .parse::<IpAddr>()
             .map_err(|_| self.connection_address.as_str())
+    }
+
+    /// Sets the `connection_address` & `addrtype` of `self` from the specified `IpAddr`
+    pub fn set_connection_ip_address(&mut self, connection_address: impl Into<IpAddr>) {
+        let connection_address = connection_address.into();
+        self.addrtype = connection_address.into();
+        self.connection_address = connection_address.to_string();
     }
 }
 
@@ -365,6 +487,12 @@ pub struct RtcpFb {
     pub pt: RtcpFbPt,
     /// RTCP Feedback value
     pub val: RtcpFbVal,
+}
+
+impl RtcpFb {
+    pub fn new(pt: RtcpFbPt, val: RtcpFbVal) -> Self {
+        RtcpFb { pt, val }
+    }
 }
 
 impl FromStr for RtcpFb {
@@ -579,6 +707,15 @@ impl Display for Direction {
     }
 }
 
+impl From<Direction> for Attribute {
+    fn from(attr: Direction) -> Attribute {
+        Attribute {
+            attribute: attr.to_string(),
+            value: None,
+        }
+    }
+}
+
 /// RTP header extensions map
 ///
 /// See [RFC 8285 Section 8](https://datatracker.ietf.org/doc/html/rfc8285#section-8)
@@ -593,6 +730,52 @@ pub struct ExtMap {
     pub uri: String,
     /// Extension attributes
     pub attributes: Option<String>,
+}
+
+impl ExtMap {
+    pub fn new(id: u8, uri: impl ToString) -> Self {
+        ExtMap {
+            id,
+            direction: None,
+            uri: uri.to_string(),
+            attributes: None,
+        }
+    }
+
+    pub fn builder(id: u8, uri: impl ToString) -> builders::ExtMap {
+        builders::ExtMap::new(id, uri)
+    }
+
+    pub fn with_direction(id: u8, direction: Direction, uri: impl ToString) -> Self {
+        ExtMap {
+            id,
+            direction: Some(direction),
+            uri: uri.to_string(),
+            attributes: None,
+        }
+    }
+
+    pub fn with_direction_and_attributes(
+        id: u8,
+        direction: Direction,
+        uri: impl ToString,
+        attributes: impl ToString,
+    ) -> Self {
+        ExtMap {
+            id,
+            direction: Some(direction),
+            uri: uri.to_string(),
+            attributes: Some(attributes.to_string()),
+        }
+    }
+
+    pub fn set_direction(&mut self, direction: Direction) {
+        self.direction = Some(direction);
+    }
+
+    pub fn set_attributes(&mut self, attributes: impl ToString) {
+        self.attributes = Some(attributes.to_string());
+    }
 }
 
 impl FromStr for ExtMap {
@@ -699,6 +882,30 @@ pub struct Fingerprint {
     pub fingerprint: Vec<u8>,
 }
 
+impl Fingerprint {
+    pub fn new(hash_func: HashFunc) -> Self {
+        Fingerprint {
+            hash_func,
+            fingerprint: vec![],
+        }
+    }
+
+    pub fn with_fingerprint(
+        hash_func: HashFunc,
+        fingerprint: impl IntoIterator<Item = u8>,
+    ) -> Self {
+        Fingerprint {
+            hash_func,
+            fingerprint: std::iter::FromIterator::from_iter(fingerprint),
+        }
+    }
+
+    pub fn set_fingerprint(&mut self, fingerprint: impl IntoIterator<Item = u8>) {
+        self.fingerprint.clear();
+        self.fingerprint.extend(fingerprint);
+    }
+}
+
 impl FromStr for Fingerprint {
     type Err = AttributeError;
 
@@ -706,23 +913,7 @@ impl FromStr for Fingerprint {
         let mut i = s.splitn(2, ' ');
 
         let hash_func = if let Some(hash_func) = i.next() {
-            if hash_func.eq_ignore_ascii_case("sha-1") {
-                HashFunc::SHA1
-            } else if hash_func.eq_ignore_ascii_case("sha-224") {
-                HashFunc::SHA224
-            } else if hash_func.eq_ignore_ascii_case("sha-256") {
-                HashFunc::SHA256
-            } else if hash_func.eq_ignore_ascii_case("sha-384") {
-                HashFunc::SHA384
-            } else if hash_func.eq_ignore_ascii_case("sha-512") {
-                HashFunc::SHA512
-            } else if hash_func.eq_ignore_ascii_case("md-5") {
-                HashFunc::MD5
-            } else if hash_func.eq_ignore_ascii_case("md-2") {
-                HashFunc::MD2
-            } else {
-                HashFunc::Other(hash_func.to_string())
-            }
+            HashFunc::new(hash_func)
         } else {
             return Err(AttributeError::ParamNotFound {
                 param: "Hash function".to_string(),
@@ -759,17 +950,7 @@ impl FromStr for Fingerprint {
 
 impl Display for Fingerprint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let hash = match &self.hash_func {
-            HashFunc::SHA1 => "sha-1",
-            HashFunc::SHA224 => "sha-224",
-            HashFunc::SHA256 => "sha-256",
-            HashFunc::SHA384 => "sha-384",
-            HashFunc::SHA512 => "sha-512",
-            HashFunc::MD5 => "md-5",
-            HashFunc::MD2 => "md-2",
-            HashFunc::Other(s) => s.as_str(),
-        };
-        f.write_str(hash)?;
+        f.write_str(self.hash_func.as_str())?;
         let mut first = true;
         for v in &self.fingerprint {
             if first {
@@ -798,6 +979,24 @@ pub struct Group {
     pub mid_tags: Vec<String>,
 }
 
+impl Group {
+    pub fn new(semantics: GroupSemantics) -> Self {
+        Group {
+            semantics,
+            mid_tags: vec![],
+        }
+    }
+
+    pub fn add_mid_tag(&mut self, mid_tag: impl ToString) {
+        self.mid_tags.push(mid_tag.to_string())
+    }
+
+    pub fn add_mid_tags(&mut self, mid_tags: impl IntoIterator<Item = impl ToString>) {
+        self.mid_tags
+            .extend(mid_tags.into_iter().map(|i| i.to_string()))
+    }
+}
+
 impl FromStr for Group {
     type Err = AttributeError;
 
@@ -811,21 +1010,7 @@ impl FromStr for Group {
             });
         };
 
-        let semantics = if "LS".eq_ignore_ascii_case(semantics) {
-            GroupSemantics::LS
-        } else if "FID".eq_ignore_ascii_case(semantics) {
-            GroupSemantics::FID
-        } else if "SRF".eq_ignore_ascii_case(semantics) {
-            GroupSemantics::SRF
-        } else if "ANAT".eq_ignore_ascii_case(semantics) {
-            GroupSemantics::ANAT
-        } else if "FEC".eq_ignore_ascii_case(semantics) {
-            GroupSemantics::FEC
-        } else if "DDP".eq_ignore_ascii_case(semantics) {
-            GroupSemantics::DDP
-        } else {
-            GroupSemantics::Other(semantics.to_string())
-        };
+        let semantics = GroupSemantics::new(semantics);
 
         let mut mid_tags = vec![];
         for mid in i {
@@ -848,16 +1033,7 @@ impl FromStr for Group {
 
 impl Display for Group {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let sem = match &self.semantics {
-            GroupSemantics::LS => "LS",
-            GroupSemantics::FID => "FID",
-            GroupSemantics::SRF => "SRF",
-            GroupSemantics::ANAT => "ANAT",
-            GroupSemantics::DDP => "DDP",
-            GroupSemantics::FEC => "FEC",
-            GroupSemantics::Other(s) => s.as_str(),
-        };
-        f.write_str(sem)?;
+        f.write_str(self.semantics.as_str())?;
         for m in &self.mid_tags {
             f.write_char(' ')?;
             f.write_str(m)?;
@@ -934,6 +1110,37 @@ pub struct Ssrc {
     pub value: Option<String>,
 }
 
+impl Ssrc {
+    pub fn new(ssrc_id: u32, attribute: SsrcAttribute) -> Self {
+        Ssrc {
+            ssrc_id,
+            attribute,
+            value: None,
+        }
+    }
+
+    pub fn with_typed_attribute(ssrc_id: u32, attribute: impl TypedAttribute) -> Self {
+        let value = attribute.to_string();
+        Ssrc {
+            ssrc_id,
+            attribute: SsrcAttribute::from(attribute),
+            value: Some(value),
+        }
+    }
+
+    pub fn with_value(ssrc_id: u32, attribute: SsrcAttribute, value: impl ToString) -> Self {
+        Ssrc {
+            ssrc_id,
+            attribute,
+            value: Some(value.to_string()),
+        }
+    }
+
+    pub fn set_value(&mut self, value: impl ToString) {
+        self.value = Some(value.to_string());
+    }
+}
+
 impl FromStr for Ssrc {
     type Err = AttributeError;
 
@@ -959,19 +1166,9 @@ impl FromStr for Ssrc {
             (rest, None)
         };
 
-        let attribute = if "cname".eq_ignore_ascii_case(attr) {
-            SsrcAttribute::Cname
-        } else if "previous-ssrc".eq_ignore_ascii_case(attr) {
-            SsrcAttribute::PreviousSsrc
-        } else if "fmtp".eq_ignore_ascii_case(attr) {
-            SsrcAttribute::Fmtp
-        } else {
-            SsrcAttribute::Other(attr.to_string())
-        };
-
         Ok(Self {
             ssrc_id,
-            attribute,
+            attribute: SsrcAttribute::new(attr),
             value,
         })
     }
@@ -1008,6 +1205,23 @@ impl TypedAttribute for Ssrc {
 pub struct SsrcGroup {
     pub semantics: GroupSemantics,
     pub ssrc_ids: Vec<u32>,
+}
+
+impl SsrcGroup {
+    pub fn new(semantics: GroupSemantics) -> Self {
+        SsrcGroup {
+            semantics,
+            ssrc_ids: vec![],
+        }
+    }
+
+    pub fn add_ssrc_id(&mut self, ssrc_id: u32) {
+        self.ssrc_ids.push(ssrc_id)
+    }
+
+    pub fn add_ssrc_ids(&mut self, ssrc_ids: impl IntoIterator<Item = u32>) {
+        self.ssrc_ids.extend(ssrc_ids)
+    }
 }
 
 impl FromStr for SsrcGroup {
@@ -1100,6 +1314,45 @@ pub struct SrtpKeyParam {
     pub lifetime: Option<u32>,
     /// MKI (Master Key Identifier) and length of the MKI field in SRTP packets
     pub mki_and_length: Option<(u32, u32)>,
+}
+
+impl SrtpKeyParam {
+    pub fn new(key_and_salt: impl ToString) -> Self {
+        SrtpKeyParam {
+            key_and_salt: key_and_salt.to_string(),
+            lifetime: None,
+            mki_and_length: None,
+        }
+    }
+
+    pub fn with_lifetime(key_and_salt: impl ToString, lifetime: u32) -> Self {
+        SrtpKeyParam {
+            key_and_salt: key_and_salt.to_string(),
+            lifetime: Some(lifetime),
+            mki_and_length: None,
+        }
+    }
+
+    pub fn with_lifetime_and_mki_and_length(
+        key_and_salt: impl ToString,
+        lifetime: u32,
+        mki: u32,
+        length: u32,
+    ) -> Self {
+        SrtpKeyParam {
+            key_and_salt: key_and_salt.to_string(),
+            lifetime: Some(lifetime),
+            mki_and_length: Some((mki, length)),
+        }
+    }
+
+    pub fn set_lifetime(&mut self, lifetime: u32) {
+        self.lifetime = Some(lifetime);
+    }
+
+    pub fn set_mki_and_length(&mut self, mki: u32, length: u32) {
+        self.mki_and_length = Some((mki, length));
+    }
 }
 
 impl FromStr for SrtpKeyParam {
@@ -1271,6 +1524,36 @@ pub struct Crypto {
     pub session_params: Vec<SrtpSessionParam>,
 }
 
+impl Crypto {
+    pub fn new(tag: u32, crypto_suite: CryptoSuite) -> Self {
+        Crypto {
+            tag,
+            crypto_suite,
+            key_params: vec![],
+            session_params: vec![],
+        }
+    }
+
+    pub fn add_key_param(&mut self, key_param: SrtpKeyParam) {
+        self.key_params.push(key_param)
+    }
+
+    pub fn add_key_params(&mut self, key_params: impl IntoIterator<Item = SrtpKeyParam>) {
+        self.key_params.extend(key_params)
+    }
+
+    pub fn add_session_param(&mut self, session_param: SrtpSessionParam) {
+        self.session_params.push(session_param)
+    }
+
+    pub fn add_session_params(
+        &mut self,
+        session_params: impl IntoIterator<Item = SrtpSessionParam>,
+    ) {
+        self.session_params.extend(session_params)
+    }
+}
+
 impl FromStr for Crypto {
     type Err = AttributeError;
 
@@ -1299,15 +1582,7 @@ impl FromStr for Crypto {
             });
         };
 
-        let crypto_suite = if "AES_CM_128_HMAC_SHA1_32".eq_ignore_ascii_case(crypto_suite) {
-            CryptoSuite::AesCm128HmacSha1_32
-        } else if "F8_128_HMAC_SHA1_80".eq_ignore_ascii_case(crypto_suite) {
-            CryptoSuite::F8_128HmacSha1_80
-        } else if "AES_CM_128_HMAC_SHA1_80".eq_ignore_ascii_case(crypto_suite) {
-            CryptoSuite::AesCm128HmacSha1_80
-        } else {
-            CryptoSuite::Other(crypto_suite.to_string())
-        };
+        let crypto_suite = CryptoSuite::new(crypto_suite);
 
         let Some(key_params_str) = i.next() else {
             return Err(AttributeError::ParamNotFound {
@@ -1417,14 +1692,7 @@ impl FromStr for Crypto {
 
 impl Display for Crypto {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let crypto_suite_str = match &self.crypto_suite {
-            CryptoSuite::AesCm128HmacSha1_80 => "AES_CM_128_HMAC_SHA1_80",
-            CryptoSuite::AesCm128HmacSha1_32 => "AES_CM_128_HMAC_SHA1_32",
-            CryptoSuite::F8_128HmacSha1_80 => "F8_128_HMAC_SHA1_80",
-            CryptoSuite::Other(s) => s.as_str(),
-        };
-
-        write!(f, "{} {crypto_suite_str}", self.tag)?;
+        write!(f, "{} {}", self.tag, self.crypto_suite.as_str())?;
 
         for (i, key_param) in self.key_params.iter().enumerate() {
             if i == 0 {
@@ -1507,6 +1775,94 @@ pub struct Candidate {
     pub rel_port: Option<u16>,
     /// Extensions
     pub extensions: Vec<(String, String)>,
+}
+
+impl Candidate {
+    pub fn new(
+        foundation: impl ToString,
+        component_id: u32,
+        transport: impl ToString,
+        priority: u64,
+        address: CandidateAddress,
+        port: u16,
+        typ: CandidateType,
+    ) -> Self {
+        Candidate {
+            foundation: foundation.to_string(),
+            component_id,
+            transport: transport.to_string(),
+            priority,
+            address,
+            port,
+            typ,
+            rel_addr: None,
+            rel_port: None,
+            extensions: vec![],
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_rel_addr(
+        foundation: impl ToString,
+        component_id: u32,
+        transport: impl ToString,
+        priority: u64,
+        address: CandidateAddress,
+        port: u16,
+        typ: CandidateType,
+        rel_addr: impl Into<IpAddr>,
+    ) -> Self {
+        Candidate {
+            foundation: foundation.to_string(),
+            component_id,
+            transport: transport.to_string(),
+            priority,
+            address,
+            port,
+            typ,
+            rel_addr: Some(rel_addr.into()),
+            rel_port: None,
+            extensions: vec![],
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_rel_addr_and_port(
+        foundation: impl ToString,
+        component_id: u32,
+        transport: impl ToString,
+        priority: u64,
+        address: CandidateAddress,
+        port: u16,
+        typ: CandidateType,
+        rel_addr: impl Into<IpAddr>,
+        rel_port: u16,
+    ) -> Self {
+        Candidate {
+            foundation: foundation.to_string(),
+            component_id,
+            transport: transport.to_string(),
+            priority,
+            address,
+            port,
+            typ,
+            rel_addr: Some(rel_addr.into()),
+            rel_port: Some(rel_port),
+            extensions: vec![],
+        }
+    }
+
+    pub fn set_rel_addr(&mut self, rel_addr: impl Into<IpAddr>) {
+        self.rel_addr = Some(rel_addr.into());
+    }
+
+    pub fn set_rel_port(&mut self, rel_port: u16) {
+        self.rel_port = Some(rel_port);
+    }
+
+    pub fn add_extension(&mut self, name: impl ToString, value: impl ToString) {
+        self.extensions.push((name.to_string(), value.to_string()))
+    }
 }
 
 impl FromStr for Candidate {
@@ -1607,17 +1963,7 @@ impl FromStr for Candidate {
             });
         };
 
-        let cand_type = if "host".eq_ignore_ascii_case(cand_type) {
-            CandidateType::Host
-        } else if "srflx".eq_ignore_ascii_case(cand_type) {
-            CandidateType::Srflx
-        } else if "prflx".eq_ignore_ascii_case(cand_type) {
-            CandidateType::Prflx
-        } else if "relay".eq_ignore_ascii_case(cand_type) {
-            CandidateType::Relay
-        } else {
-            CandidateType::Other(cand_type.to_string())
-        };
+        let cand_type = CandidateType::new(cand_type);
 
         let mut rel_addr: Option<IpAddr> = None;
         let mut rel_port: Option<u16> = None;
@@ -1687,27 +2033,20 @@ impl FromStr for Candidate {
 
 impl Display for Candidate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let typ = match &self.typ {
-            CandidateType::Host => "host",
-            CandidateType::Srflx => "srflx",
-            CandidateType::Prflx => "prflx",
-            CandidateType::Relay => "relay",
-            CandidateType::Other(o) => o.as_str(),
-        };
-
         let candidate_addr = match &self.address {
             CandidateAddress::IpAddr(a) => a.to_string(),
             CandidateAddress::FQDN(d) => d.clone(),
         };
         write!(
             f,
-            "{} {} {} {} {} {} typ {typ}",
+            "{} {} {} {} {} {} typ {}",
             self.foundation,
             self.component_id,
             self.transport,
             self.priority,
             candidate_addr,
-            self.port
+            self.port,
+            self.typ.as_str(),
         )?;
         if let Some(rel_addr) = self.rel_addr {
             write!(f, " raddr {rel_addr}")?;
