@@ -831,6 +831,15 @@ impl SsrcAttribute {
             SsrcAttribute::Other(attr.to_string())
         }
     }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            SsrcAttribute::Cname => "cname",
+            SsrcAttribute::PreviousSsrc => "previous-ssrc",
+            SsrcAttribute::Fmtp => "fmtp",
+            SsrcAttribute::Other(other) => other.as_str(),
+        }
+    }
 }
 
 impl<T: TypedAttribute> From<T> for SsrcAttribute {
