@@ -131,8 +131,8 @@ impl Origin {
             },
             sess_id,
             sess_version,
-            nettype,
-            addrtype,
+            nettype: NetType::from_str(&nettype).expect("infallible"),
+            addrtype: AddrType::from_str(&addrtype).expect("infallible"),
             unicast_address,
         })
     }
@@ -148,8 +148,8 @@ impl Connection {
             parse_str(&mut connection, line.n, "Connection connection-address")?;
 
         Ok(Connection {
-            nettype,
-            addrtype,
+            nettype: NetType::from_str(&nettype).expect("infaillible"),
+            addrtype: AddrType::from_str(&addrtype).expect("infaillible"),
             connection_address,
         })
     }
@@ -573,8 +573,8 @@ impl Session {
             username: None,
             sess_id: String::new(),
             sess_version: 0,
-            nettype: String::new(),
-            addrtype: String::new(),
+            nettype: NetType::Other(String::new()),
+            addrtype: AddrType::Other(String::new()),
             unicast_address: String::new(),
         });
         let session_name = session_name.unwrap_or_default();
@@ -863,7 +863,7 @@ a=rtpmap:8 PCMA/8000/1\r
 
 ";
         let parsed = Session::parse(&sdp[..]).unwrap();
-        assert_eq!(parsed.origin.try_parse_nettype(), Ok(NetType::In));
+        assert_eq!(parsed.origin.nettype, NetType::In);
     }
 
     /// Parses SDP from a Geovision camera which (incorrectly) omits the "t="

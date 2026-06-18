@@ -6,6 +6,7 @@
 
 use std::{
     fmt::{Display, Write},
+    net::IpAddr,
     str::FromStr,
 };
 
@@ -35,7 +36,7 @@ impl std::fmt::Display for ParseEnumError {
 /// See [RFC 8866 Section 5.2](https://datatracker.ietf.org/doc/html/rfc8866#section-5.2),
 /// [RFC 8866 Section 5.7](https://datatracker.ietf.org/doc/html/rfc8866#section-5.7) and
 /// [RFC 8866 Section 8.2.6](https://datatracker.ietf.org/doc/html/rfc8866#section-8.2.6) for more details
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum NetType {
     /// Internet
@@ -46,21 +47,25 @@ pub enum NetType {
     Atm,
     /// Public Switched Telephone Network
     Pstn,
+    /// Other
+    Other(String),
 }
 
 impl NetType {
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             NetType::In => "IN",
             NetType::Tn => "TN",
             NetType::Atm => "ATM",
             NetType::Pstn => "PSTN",
+            NetType::Other(nettype) => nettype.as_str(),
         }
     }
 }
 
 impl FromStr for NetType {
-    type Err = ParseEnumError;
+    // FIXME use the never type when it is stable
+    type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if "IN".eq_ignore_ascii_case(s) {
@@ -72,8 +77,14 @@ impl FromStr for NetType {
         } else if "PSTN".eq_ignore_ascii_case(s) {
             Ok(NetType::Pstn)
         } else {
-            Err(ParseEnumError::Invalid(s.to_string()))
+            Ok(NetType::Other(s.to_string()))
         }
+    }
+}
+
+impl From<&str> for NetType {
+    fn from(value: &str) -> Self {
+        NetType::from_str(value).expect("infallible")
     }
 }
 
@@ -87,26 +98,35 @@ impl Display for NetType {
 ///
 /// See [RFC 8866 Section 5.2](https://datatracker.ietf.org/doc/html/rfc8866#section-5.2),
 /// [RFC 8866 Section 5.7](https://datatracker.ietf.org/doc/html/rfc8866#section-5.7)
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AddrType {
     /// IPv4 address
     Ip4,
     /// IPv6 address
     Ip6,
+    /// Other
+    Other(String),
 }
 
 impl AddrType {
-    pub fn as_str(&self) -> &'static str {
+    /// Whether `self` matches an IPv4 or IPv6 address.
+    pub fn is_ip(&self) -> bool {
+        matches!(self, AddrType::Ip4 | AddrType::Ip6)
+    }
+
+    pub fn as_str(&self) -> &str {
         match self {
             AddrType::Ip4 => "IP4",
             AddrType::Ip6 => "IP6",
+            AddrType::Other(other) => other.as_str(),
         }
     }
 }
 
 impl FromStr for AddrType {
-    type Err = ParseEnumError;
+    // FIXME use the never type when it is stable
+    type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if "IP4".eq_ignore_ascii_case(s) {
@@ -114,7 +134,22 @@ impl FromStr for AddrType {
         } else if "IP6".eq_ignore_ascii_case(s) {
             Ok(AddrType::Ip6)
         } else {
-            Err(ParseEnumError::Invalid(s.to_string()))
+            Ok(AddrType::Other(s.to_string()))
+        }
+    }
+}
+
+impl From<&str> for AddrType {
+    fn from(value: &str) -> Self {
+        AddrType::from_str(value).expect("infallible")
+    }
+}
+
+impl From<IpAddr> for AddrType {
+    fn from(addr: IpAddr) -> Self {
+        match addr {
+            IpAddr::V4(_) => AddrType::Ip4,
+            IpAddr::V6(_) => AddrType::Ip6,
         }
     }
 }

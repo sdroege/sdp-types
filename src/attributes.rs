@@ -244,8 +244,28 @@ pub struct Rtcp {
     pub nettype: NetType,
     /// Address type
     pub addrtype: AddrType,
-    /// IP Address, unicast or multicast
-    pub connection_address: IpAddr,
+    /// Connection address: can be IP Address, unicast, multicast, ...
+    /// Conformity may be checked against the `addrtype`.
+    pub connection_address: String,
+}
+
+impl Rtcp {
+    /// Sets the `connection_address` & `addrtype` of `self` from the specified `IpAddr`
+    pub fn set_connection_ip_address(&mut self, connection_address: impl Into<IpAddr>) {
+        let connection_address = connection_address.into();
+        self.addrtype = connection_address.into();
+        self.connection_address = connection_address.to_string();
+    }
+
+    /// Tries to parse the `connection_address` `String` of `self` as `IpAddr`
+    ///
+    /// Returns the `Ok` with the parsed `IpAddr` or `Err` with the string address
+    /// if parsing failed.
+    pub fn try_parse_connection_ip_address(&self) -> Result<IpAddr, &str> {
+        self.connection_address
+            .parse::<IpAddr>()
+            .map_err(|_| self.connection_address.as_str())
+    }
 }
 
 impl FromStr for Rtcp {
@@ -298,17 +318,9 @@ impl FromStr for Rtcp {
             });
         };
 
-        let Some(connection_addr) = i.next() else {
+        let Some(connection_address) = i.next() else {
             return Err(AttributeError::ParamNotFound {
                 param: "Connection address".to_string(),
-                attr: <Self as TypedAttribute>::NAME.to_string(),
-            });
-        };
-
-        let Ok(connection_address) = connection_addr.parse() else {
-            return Err(AttributeError::InvalidParamValue {
-                param: "Connection address".to_string(),
-                val: connection_addr.to_string(),
                 attr: <Self as TypedAttribute>::NAME.to_string(),
             });
         };
@@ -324,7 +336,7 @@ impl FromStr for Rtcp {
             port,
             nettype,
             addrtype,
-            connection_address,
+            connection_address: connection_address.to_string(),
         })
     }
 }
@@ -1716,6 +1728,8 @@ impl TypedAttribute for Candidate {
 
 #[cfg(test)]
 mod tests {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
     use super::*;
     use crate::*;
 
@@ -2129,14 +2143,6 @@ a=candidate:7 1 UDP 10 192.168.1.1 49157 typ unknown_type\r
                 attr: "rtcp".to_string()
             }
         );
-        assert_eq!(
-            "53020 invalid IP4 127.0.0.1".parse::<Rtcp>().unwrap_err(),
-            AttributeError::InvalidParamValue {
-                param: "Network type".to_string(),
-                val: "invalid".to_string(),
-                attr: "rtcp".to_string()
-            }
-        );
 
         // Test Fingerprint error paths
         assert_eq!(
@@ -2296,6 +2302,56 @@ a=candidate:7 1 UDP 10 192.168.1.1 49157 typ unknown_type\r
                 error: "No value for the attribute".to_string(),
                 attr: "rtpmap".to_string()
             }
+        );
+    }
+
+    #[test]
+    fn parse_rtcp_address() {
+        let sdp = "v=0\r
+o=alice 3203093520 3203093520 IN IP4 host.example.com\r
+s=parse rtcp attribute address test\r
+a=rtcp:5000 IN IP4 127.0.0.1\r
+a=rtcp:5000 IN IP4 127.0.0.0/24\r
+a=rtcp:5000 IN IP6 ::1\r
+a=rtcp:5000 IN NONIP non-IP\r
+";
+
+        let parsed = Session::parse(sdp.as_bytes()).unwrap();
+        let mut rtcp_attr_iter = parsed.attributes_typed::<Rtcp>();
+
+        let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
+        assert_eq!(rtcp.addrtype, AddrType::Ip4);
+        assert_eq!(&rtcp.connection_address, "127.0.0.1");
+        assert_eq!(
+            rtcp.try_parse_connection_ip_address().unwrap(),
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+        );
+
+        let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
+        assert_eq!(rtcp.addrtype, AddrType::Ip4);
+        assert_eq!(&rtcp.connection_address, "127.0.0.0/24");
+        assert_eq!(
+            &rtcp
+                .try_parse_connection_ip_address()
+                .expect_err("IPv4 with mask")
+                .to_string(),
+            "127.0.0.0/24"
+        );
+
+        let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
+        assert_eq!(rtcp.addrtype, AddrType::Ip6);
+        assert_eq!(&rtcp.connection_address, "::1");
+        assert_eq!(
+            rtcp.try_parse_connection_ip_address().unwrap(),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+        );
+
+        let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
+        assert_eq!(rtcp.addrtype, AddrType::Other("NONIP".to_string()));
+        assert_eq!(&rtcp.connection_address, "non-IP");
+        assert_eq!(
+            rtcp.try_parse_connection_ip_address().unwrap_err(),
+            "non-IP",
         );
     }
 }
