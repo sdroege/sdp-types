@@ -1139,6 +1139,31 @@ impl Ssrc {
     pub fn set_value(&mut self, value: impl ToString) {
         self.value = Some(value.to_string());
     }
+
+    /// Gets the inner attribute as a `TypedAttribute`.
+    ///
+    /// # Errors
+    ///
+    /// * `AttributeError::Other` if the inner attribute doesn't match
+    ///   the specified `TypedAttribute` or if the value is empty.
+    /// * a specific `AttributeError` if the typed attribute couldn't be built.
+    pub fn get_typed<T: TypedAttribute>(&self) -> Result<T, AttributeError> {
+        if !self.attribute.as_str().eq_ignore_ascii_case(T::NAME) {
+            return Err(AttributeError::Other {
+                error: format!("Attribute type mismatch (requested {})", T::NAME),
+                attr: self.attribute.as_str().to_string(),
+            });
+        }
+
+        let Some(ref value) = self.value else {
+            return Err(AttributeError::Other {
+                error: "No value for the attribute".to_string(),
+                attr: T::NAME.to_string(),
+            });
+        };
+
+        T::from_str(value)
+    }
 }
 
 impl FromStr for Ssrc {
