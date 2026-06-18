@@ -1,3 +1,4 @@
+//
 // Copyright (C) 2019 Sebastian Dröge <sebastian@centricular.com>
 //
 // Licensed under the MIT license, see the LICENSE file or <http://opensource.org/licenses/MIT>
@@ -47,10 +48,7 @@
 //!    are currently parsed as a plain string and not according to the SDP
 //!    grammar.
 
-use std::{
-    net::{AddrParseError, IpAddr},
-    str::FromStr,
-};
+use std::{net::IpAddr, str::FromStr};
 
 use bstr::*;
 use fallible_iterator::FallibleIterator;
@@ -79,42 +77,29 @@ pub struct Origin {
     /// Session version number.
     pub sess_version: u64,
     /// Type of network for this session.
-    pub nettype: String,
+    pub nettype: NetType,
     /// Type of the `unicast_address`.
-    pub addrtype: String,
+    pub addrtype: AddrType,
     /// Address where the session was created.
     pub unicast_address: String,
 }
 
 impl Origin {
-    /// Tries to parse the `addrtype` `String` of `self` as `AddrType`
-    pub fn try_parse_addrtype(&self) -> Result<AddrType, ParseEnumError> {
-        AddrType::from_str(self.addrtype.as_str())
-    }
-
-    /// Sets the `addrtype` `String` of `self` from the specified `AddrType`
-    pub fn set_addrtype(&mut self, addrtype: AddrType) {
-        self.addrtype = addrtype.to_string();
-    }
-
-    /// Tries to parse the `nettype` `String` of `self` as `NetType`
-    pub fn try_parse_nettype(&self) -> Result<NetType, ParseEnumError> {
-        NetType::from_str(self.nettype.as_str())
-    }
-
-    /// Sets the `nettype` `String` of `self` from the specified `NetType`
-    pub fn set_nettype(&mut self, nettype: NetType) {
-        self.nettype = nettype.to_string();
+    /// Sets the `unicast_address` & `addrtype` of `self` from the specified `IpAddr`
+    pub fn set_unicast_ip_address(&mut self, unicast_address: impl Into<IpAddr>) {
+        let unicast_address = unicast_address.into();
+        self.addrtype = unicast_address.into();
+        self.unicast_address = unicast_address.to_string();
     }
 
     /// Tries to parse the `unicast_address` `String` of `self` as `IpAddr`
-    pub fn try_parse_unicast_address(&self) -> Result<IpAddr, AddrParseError> {
-        self.unicast_address.parse()
-    }
-
-    /// Sets the `unicast_address` `String` of `self` from the specified `IpAddr`
-    pub fn set_unicast_address(&mut self, unicast_address: IpAddr) {
-        self.unicast_address = unicast_address.to_string();
+    ///
+    /// Returns the `Ok` with the parsed `IpAddr` or `Err` with the string address
+    /// if parsing failed.
+    pub fn try_parse_unicast_ip_address(&self) -> Result<IpAddr, &str> {
+        self.unicast_address
+            .parse::<IpAddr>()
+            .map_err(|_| self.unicast_address.as_str())
     }
 }
 
@@ -125,42 +110,29 @@ impl Origin {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Connection {
     /// Type of network for this connection.
-    pub nettype: String,
+    pub nettype: NetType,
     /// Type of the `connection_address`.
-    pub addrtype: String,
+    pub addrtype: AddrType,
     /// Connection address.
     pub connection_address: String,
 }
 
 impl Connection {
-    /// Tries to parse the `addrtype` `String` of `self` as `AddrType`
-    pub fn try_parse_addrtype(&self) -> Result<AddrType, ParseEnumError> {
-        AddrType::from_str(self.addrtype.as_str())
-    }
-
-    /// Sets the `addrtype` `String` of `self` from the specified `AddrType`
-    pub fn set_addrtype(&mut self, addrtype: AddrType) {
-        self.addrtype = addrtype.to_string();
-    }
-
-    /// Tries to parse the `nettype` `String` of `self` as `NetType`
-    pub fn try_parse_nettype(&self) -> Result<NetType, ParseEnumError> {
-        NetType::from_str(self.nettype.as_str())
-    }
-
-    /// Sets the `nettype` `String` of `self` from the specified `NetType`
-    pub fn set_nettype(&mut self, nettype: NetType) {
-        self.nettype = nettype.to_string();
+    /// Sets the `connection_address` & `addrtype` of `self` from the specified `IpAddr`
+    pub fn set_connection_ip_address(&mut self, connection_address: impl Into<IpAddr>) {
+        let connection_address = connection_address.into();
+        self.addrtype = connection_address.into();
+        self.connection_address = connection_address.to_string();
     }
 
     /// Tries to parse the `connection_address` `String` of `self` as `IpAddr`
-    pub fn try_parse_connection_address(&self) -> Result<IpAddr, AddrParseError> {
-        self.connection_address.parse()
-    }
-
-    /// Sets the `connection_address` `String` of `self` from the specified `IpAddr`
-    pub fn set_connection_address(&mut self, connection_address: IpAddr) {
-        self.connection_address = connection_address.to_string();
+    ///
+    /// Returns the `Ok` with the parsed `IpAddr` or `Err` with the string address
+    /// if parsing failed.
+    pub fn try_parse_connection_ip_address(&self) -> Result<IpAddr, &str> {
+        self.connection_address
+            .parse::<IpAddr>()
+            .map_err(|_| self.connection_address.as_str())
     }
 }
 
@@ -482,6 +454,8 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
+    use std::net::Ipv4Addr;
+
     use super::*;
 
     #[test]
@@ -511,10 +485,10 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
         let mut written = vec![];
         parsed.write(&mut written).unwrap();
         assert_eq!(String::from_utf8_lossy(&written), sdp);
-        assert_eq!(parsed.origin.try_parse_addrtype(), Ok(AddrType::Ip4));
-        assert_ne!(parsed.origin.try_parse_nettype(), Ok(NetType::Pstn));
+        assert_eq!(parsed.origin.addrtype, AddrType::Ip4);
+        assert_ne!(parsed.origin.nettype, NetType::Pstn);
         assert_eq!(
-            parsed.origin.try_parse_unicast_address(),
+            parsed.origin.try_parse_unicast_ip_address(),
             Ok(IpAddr::V4(std::net::Ipv4Addr::new(10, 47, 16, 5)))
         );
         assert_eq!(parsed.medias[0].try_parse_mediatype(), Ok(MediaType::Audio));
@@ -615,7 +589,7 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
                             port: 53020,
                             nettype: NetType::In,
                             addrtype: AddrType::Ip4,
-                            connection_address: IpAddr::V4(std::net::Ipv4Addr::new(126, 16, 64, 4)),
+                            connection_address: std::net::Ipv4Addr::new(126, 16, 64, 4).to_string(),
                         }
                         .to_string(),
                     ),
@@ -827,5 +801,80 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
             .expect("Valid vector of attributes");
         assert_eq!(a[2].encoding_name, "L16");
         assert_eq!(a[0].payload_type, 99);
+    }
+
+    #[test]
+    fn origin_parse_address_error() {
+        use std::net::Ipv6Addr;
+
+        let mut origin = Origin {
+            username: None,
+            sess_id: "1234".to_string(),
+            sess_version: 0,
+            nettype: NetType::In,
+            addrtype: AddrType::Ip4,
+            unicast_address: "127.0.0.1".to_string(),
+        };
+
+        assert_eq!(origin.addrtype, AddrType::Ip4);
+        assert_eq!(
+            origin.try_parse_unicast_ip_address().unwrap(),
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+        );
+
+        origin.unicast_address = "127.0.0.1/24".to_string();
+        assert_eq!(
+            origin.try_parse_unicast_ip_address().unwrap_err(),
+            origin.unicast_address
+        );
+
+        origin.unicast_address = "non-ip".to_string();
+        assert_eq!(
+            origin.try_parse_unicast_ip_address().unwrap_err(),
+            origin.unicast_address
+        );
+
+        origin.set_unicast_ip_address(Ipv6Addr::LOCALHOST);
+        assert_eq!(origin.addrtype, AddrType::Ip6);
+        assert_eq!(
+            origin.try_parse_unicast_ip_address().unwrap(),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+        );
+    }
+
+    #[test]
+    fn connection_parse_address_error() {
+        use std::net::Ipv6Addr;
+
+        let mut connection = Connection {
+            nettype: NetType::In,
+            addrtype: AddrType::Ip4,
+            connection_address: "127.0.0.1".to_string(),
+        };
+
+        assert_eq!(connection.addrtype, AddrType::Ip4);
+        assert_eq!(
+            connection.try_parse_connection_ip_address().unwrap(),
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+        );
+
+        connection.connection_address = "127.0.0.1/24".to_string();
+        assert_eq!(
+            connection.try_parse_connection_ip_address().unwrap_err(),
+            connection.connection_address
+        );
+
+        connection.connection_address = "non-ip".to_string();
+        assert_eq!(
+            connection.try_parse_connection_ip_address().unwrap_err(),
+            connection.connection_address
+        );
+
+        connection.set_connection_ip_address(Ipv6Addr::LOCALHOST);
+        assert_eq!(connection.addrtype, AddrType::Ip6);
+        assert_eq!(
+            connection.try_parse_connection_ip_address().unwrap(),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+        );
     }
 }
