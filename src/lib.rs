@@ -605,6 +605,13 @@ impl Media {
         self.proto = proto.to_string();
     }
 
+    /// Gets the first value of the given typed attribute, if existing.
+    pub fn get_first_attribute_typed<T: TypedAttribute>(&self) -> Result<T, AttributeError> {
+        self.attributes_typed()
+            .next()
+            .unwrap_or_else(|| Err(AttributeError::NotFound(T::NAME.to_string())))
+    }
+
     /// Gets an iterator over all attribute values of the given name.
     ///
     /// Each item is a `Result` with `T` in `Ok` and `AttributeError` in `Err`.
@@ -808,6 +815,13 @@ impl Session {
         } else {
             Err(AttributeError::NotFound(name.to_string()))
         }
+    }
+
+    /// Gets the first value of the given typed attribute, if existing.
+    pub fn get_first_attribute_typed<T: TypedAttribute>(&self) -> Result<T, AttributeError> {
+        self.attributes_typed()
+            .next()
+            .unwrap_or_else(|| Err(AttributeError::NotFound(T::NAME.to_string())))
     }
 
     /// Gets an iterator over all attribute values of the given name.
@@ -1045,6 +1059,10 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
         assert_eq!(r[0].as_ref().unwrap().addrtype, AddrType::Ip4);
         assert_eq!(r[0].as_ref().unwrap().port, 53020);
 
+        let rtcp_attr = media.get_first_attribute_typed::<Rtcp>().unwrap();
+        assert_eq!(rtcp_attr.addrtype, AddrType::Ip4);
+        assert_eq!(rtcp_attr.port, 53020);
+
         assert_eq!(
             media
                 .get_attribute_values("fingerprint")
@@ -1136,6 +1154,13 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
             .unwrap()
             .unwrap();
         let rtpmap = RtpMap::from_str(v).unwrap();
+        assert_eq!(rtpmap.clock_rate, 90000);
+        assert_eq!(rtpmap.encoding_name, "h263-1998");
+        assert_ne!(rtpmap.encoding_name, "h263");
+        assert_ne!(rtpmap.encoding_params, Some("2".to_string()));
+        assert_eq!(rtpmap.payload_type, 99);
+
+        let rtpmap = session.get_first_attribute_typed::<RtpMap>().unwrap();
         assert_eq!(rtpmap.clock_rate, 90000);
         assert_eq!(rtpmap.encoding_name, "h263-1998");
         assert_ne!(rtpmap.encoding_name, "h263");
