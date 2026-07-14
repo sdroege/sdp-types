@@ -54,6 +54,12 @@ pub enum AttributeError {
     Other { error: String, attr: String },
 }
 
+impl AttributeError {
+    pub fn is_attribute_not_found(&self) -> bool {
+        matches!(self, AttributeError::NotFound(_))
+    }
+}
+
 /// RtpMap Attribute
 ///
 /// See [RFC 8866 Section 6.6](https://datatracker.ietf.org/doc/html/rfc8866#section-6.6) for more details

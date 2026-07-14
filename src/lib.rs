@@ -470,19 +470,6 @@ pub struct Media {
     pub attributes: Vec<Attribute>,
 }
 
-/// Error returned when an attribute is not found.
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct AttributeNotFoundError;
-
-impl std::error::Error for AttributeNotFoundError {}
-
-impl std::fmt::Display for AttributeNotFoundError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "Attribute not found")
-    }
-}
-
 impl Media {
     pub fn new(media: MediaType, port: u16, proto: TransportProto, fmt: impl ToString) -> Self {
         Media {
@@ -572,14 +559,11 @@ impl Media {
     }
 
     /// Gets the first value of the given attribute, if existing.
-    pub fn get_first_attribute_value(
-        &self,
-        name: &str,
-    ) -> Result<Option<&str>, AttributeNotFoundError> {
+    pub fn get_first_attribute_value(&self, name: &str) -> Result<Option<&str>, AttributeError> {
         self.attributes
             .iter()
             .find(|a| a.attribute == name)
-            .ok_or(AttributeNotFoundError)
+            .ok_or(AttributeError::NotFound(name.to_string()))
             .map(|a| a.value.as_deref())
     }
 
@@ -587,7 +571,7 @@ impl Media {
     pub fn get_attribute_values<'a>(
         &'a self,
         name: &'a str,
-    ) -> Result<impl Iterator<Item = Option<&'a str>> + 'a, AttributeNotFoundError> {
+    ) -> Result<impl Iterator<Item = Option<&'a str>> + 'a, AttributeError> {
         let mut iter = self
             .attributes
             .iter()
@@ -597,7 +581,7 @@ impl Media {
         if iter.peek().is_some() {
             Ok(iter)
         } else {
-            Err(AttributeNotFoundError)
+            Err(AttributeError::NotFound(name.to_string()))
         }
     }
 
@@ -800,14 +784,11 @@ impl Session {
     }
 
     /// Gets the first value of the given attribute, if existing.
-    pub fn get_first_attribute_value(
-        &self,
-        name: &str,
-    ) -> Result<Option<&str>, AttributeNotFoundError> {
+    pub fn get_first_attribute_value(&self, name: &str) -> Result<Option<&str>, AttributeError> {
         self.attributes
             .iter()
             .find(|a| a.attribute == name)
-            .ok_or(AttributeNotFoundError)
+            .ok_or(AttributeError::NotFound(name.to_string()))
             .map(|a| a.value.as_deref())
     }
 
@@ -815,7 +796,7 @@ impl Session {
     pub fn get_attribute_values<'a>(
         &'a self,
         name: &'a str,
-    ) -> Result<impl Iterator<Item = Option<&'a str>> + 'a, AttributeNotFoundError> {
+    ) -> Result<impl Iterator<Item = Option<&'a str>> + 'a, AttributeError> {
         let mut iter = self
             .attributes
             .iter()
@@ -825,7 +806,7 @@ impl Session {
         if iter.peek().is_some() {
             Ok(iter)
         } else {
-            Err(AttributeNotFoundError)
+            Err(AttributeError::NotFound(name.to_string()))
         }
     }
 
@@ -1020,10 +1001,9 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
             media.get_first_attribute_value("rtcp"),
             Ok(Some("53020 IN IP4 126.16.64.4"))
         );
-        assert_eq!(
-            media.get_first_attribute_value("foo"),
-            Err(AttributeNotFoundError)
-        );
+        let err = media.get_first_attribute_value("foo").unwrap_err();
+        assert_eq!(err, AttributeError::NotFound("foo".to_string()));
+        assert!(err.is_attribute_not_found());
 
         assert_eq!(
             media
@@ -1163,10 +1143,10 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
         assert_eq!(rtpmap.payload_type, 99);
 
         assert_eq!(session.get_first_attribute_value("rtcp"), Ok(None));
-        assert_eq!(
-            session.get_first_attribute_value("foo"),
-            Err(AttributeNotFoundError)
-        );
+
+        let err = session.get_first_attribute_value("foo").unwrap_err();
+        assert_eq!(err, AttributeError::NotFound("foo".to_string()));
+        assert!(err.is_attribute_not_found());
 
         assert_eq!(
             session
