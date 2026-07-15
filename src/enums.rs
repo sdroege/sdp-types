@@ -814,29 +814,38 @@ pub enum SsrcAttribute {
     PreviousSsrc,
     /// See [RFC 5576 Section 6.3](https://datatracker.ietf.org/doc/html/rfc5576#section-6.3)
     Fmtp,
+    /// Rtcp attribute
+    Rtcp,
     /// See [RFC 5576 Section 6.4](https://datatracker.ietf.org/doc/html/rfc5576#section-6.4)
     Other(String),
 }
 
 impl SsrcAttribute {
     pub fn new(attribute: impl AsRef<str>) -> Self {
+        use crate::{Fmtp, Rtcp};
+
         let attr = attribute.as_ref();
         if "cname".eq_ignore_ascii_case(attr) {
             SsrcAttribute::Cname
         } else if "previous-ssrc".eq_ignore_ascii_case(attr) {
             SsrcAttribute::PreviousSsrc
-        } else if "fmtp".eq_ignore_ascii_case(attr) {
+        } else if <Fmtp as TypedAttribute>::NAME.eq_ignore_ascii_case(attr) {
             SsrcAttribute::Fmtp
+        } else if <Rtcp as TypedAttribute>::NAME.eq_ignore_ascii_case(attr) {
+            SsrcAttribute::Rtcp
         } else {
             SsrcAttribute::Other(attr.to_string())
         }
     }
 
     pub fn as_str(&self) -> &str {
+        use crate::{Fmtp, Rtcp};
+
         match self {
             SsrcAttribute::Cname => "cname",
             SsrcAttribute::PreviousSsrc => "previous-ssrc",
-            SsrcAttribute::Fmtp => "fmtp",
+            SsrcAttribute::Fmtp => <Fmtp as TypedAttribute>::NAME,
+            SsrcAttribute::Rtcp => <Rtcp as TypedAttribute>::NAME,
             SsrcAttribute::Other(other) => other.as_str(),
         }
     }

@@ -1207,10 +1207,13 @@ impl FromStr for Ssrc {
 
 impl Display for Ssrc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use crate::{Fmtp, Rtcp};
+
         let attr_str = match &self.attribute {
             SsrcAttribute::Cname => "cname",
             SsrcAttribute::PreviousSsrc => "previous-ssrc",
-            SsrcAttribute::Fmtp => "fmtp",
+            SsrcAttribute::Fmtp => <Fmtp as TypedAttribute>::NAME,
+            SsrcAttribute::Rtcp => <Rtcp as TypedAttribute>::NAME,
             SsrcAttribute::Other(other) => other.as_str(),
         };
         write!(f, "{} {attr_str}", self.ssrc_id)?;
@@ -2212,7 +2215,7 @@ a=ssrc:22222 fmtp:0 0-15\r
 a=ssrc-group:FID 33333 44444\r
 a=ssrc:33333 cname:user3@example.com\r
 a=ssrc:44444 cname:user3@example.com\r
-a=ssrc:1698359993 ts-refclk:ntp=pool.ntp.org
+a=ssrc:1698359993 rtcp:5003 IN IP4 127.0.0.1
 ";
 
         let parsed = Session::parse(sdp.as_bytes()).unwrap();
@@ -2222,8 +2225,7 @@ a=ssrc:1698359993 ts-refclk:ntp=pool.ntp.org
             .attributes_typed::<Ssrc>()
             .filter(|s| {
                 let Ok(ssrc) = s else { return false };
-                ssrc.attribute == SsrcAttribute::Fmtp
-                    || matches!(ssrc.attribute, SsrcAttribute::Other(_))
+                ssrc.attribute == SsrcAttribute::Fmtp || ssrc.attribute == SsrcAttribute::Rtcp
             })
             .collect::<Vec<_>>();
 
@@ -2243,10 +2245,7 @@ a=ssrc:1698359993 ts-refclk:ntp=pool.ntp.org
             GroupSemantics::FID
         );
 
-        assert_eq!(
-            ssrcs[1].as_ref().unwrap().attribute,
-            SsrcAttribute::Other("ts-refclk".to_string())
-        );
+        assert_eq!(ssrcs[1].as_ref().unwrap().attribute, SsrcAttribute::Rtcp);
     }
 
     #[test]
