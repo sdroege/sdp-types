@@ -40,14 +40,21 @@
 //!
 //! // Access the 'tool' attribute
 //! match sdp.get_first_attribute_value("tool") {
-//!     Ok(Some(tool)) => println!("tool: {}", tool),
-//!     Ok(None) => println!("tool: empty"),
-//!     Err(_) => println!("no tool attribute"),
+//!     Some(Some(tool)) => println!("tool: {tool}"),
+//!     Some(None) => println!("tool: empty"),
+//!     None => println!("no tool attribute"),
 //! }
 //!
-//! // Access all the 'rtpmap' attributes as a `RtpMap` type
+//! // Access all the 'rtpmap' attributes as an `RtpMap` type
 //! // returns an iterator of type `Iterator<Item = Result<RtpMap, AttributeError>>`
 //! let r = sdp.attributes_typed::<sdp_types::RtpMap>();
+//!
+//! // Access the first 'rtpmap' attribute as an `RtpMap` type:
+//! match sdp.get_first_attribute_typed::<sdp_types::RtpMap>() {
+//!     Some(Ok(rtpmap)) => println!("rtpmap: {rtpmap}"),
+//!     Some(Err(err)) => println!("rtpmap: parsing error: {err}"),
+//!     None => println!("no rtpmap attribute"),
+//! }
 //! ```
 //!
 //! ## Limitations
@@ -560,31 +567,23 @@ impl Media {
         self.attributes.iter().any(|a| a.attribute == name)
     }
 
-    /// Gets the first value of the given attribute, if existing.
-    pub fn get_first_attribute_value(&self, name: &str) -> Result<Option<&str>, AttributeError> {
-        self.attributes
-            .iter()
-            .find(|a| a.attribute == name)
-            .ok_or(AttributeError::NotFound(name.to_string()))
-            .map(|a| a.value.as_deref())
+    /// Gets the first value of the given attribute.
+    ///
+    /// The outter `Option` reflects the availability of the attribute.
+    /// The inner `Option` reflects the optional value of the attribute.
+    pub fn get_first_attribute_value<'a>(&'a self, name: &'a str) -> Option<Option<&'a str>> {
+        self.get_attribute_values(name).next()
     }
 
-    /// Gets an iterator over all attribute values of the given name, if existing.
+    /// Gets an iterator over all attribute values of the given name.
     pub fn get_attribute_values<'a>(
         &'a self,
         name: &'a str,
-    ) -> Result<impl Iterator<Item = Option<&'a str>> + 'a, AttributeError> {
-        let mut iter = self
-            .attributes
+    ) -> impl Iterator<Item = Option<&'a str>> {
+        self.attributes
             .iter()
             .filter(move |a| a.attribute == name)
             .map(|a| a.value.as_deref())
-            .peekable();
-        if iter.peek().is_some() {
-            Ok(iter)
-        } else {
-            Err(AttributeError::NotFound(name.to_string()))
-        }
     }
 
     /// Tries to parse the `media` `String` of `self` as `MediaType`
@@ -607,16 +606,16 @@ impl Media {
         self.proto = proto.to_string();
     }
 
-    /// Gets the first value of the given typed attribute, if existing.
-    pub fn get_first_attribute_typed<T: TypedAttribute>(&self) -> Result<T, AttributeError> {
-        self.attributes_typed()
-            .next()
-            .unwrap_or_else(|| Err(AttributeError::NotFound(T::NAME.to_string())))
+    /// Gets the first value of the given typed attribute.
+    pub fn get_first_attribute_typed<T: TypedAttribute>(
+        &self,
+    ) -> Option<Result<T, AttributeError>> {
+        self.attributes_typed().next()
     }
 
     /// Gets an iterator over all attribute values of the given name.
     ///
-    /// Each item is a `Result` with `T` in `Ok` and `AttributeError` in `Err`.
+    /// Each item represents the attribute parsing `Result`.
     ///
     /// The iterator does not terminate upon an error item; continues with the next attribute
     pub fn attributes_typed<'a, T: TypedAttribute>(
@@ -792,43 +791,35 @@ impl Session {
         self.attributes.iter().any(|a| a.attribute == name)
     }
 
-    /// Gets the first value of the given attribute, if existing.
-    pub fn get_first_attribute_value(&self, name: &str) -> Result<Option<&str>, AttributeError> {
-        self.attributes
-            .iter()
-            .find(|a| a.attribute == name)
-            .ok_or(AttributeError::NotFound(name.to_string()))
-            .map(|a| a.value.as_deref())
+    /// Gets the first value of the given attribute.
+    ///
+    /// The outter `Option` reflects the availability of the attribute.
+    /// The inner `Option` reflects the optional value of the attribute.
+    pub fn get_first_attribute_value<'a>(&'a self, name: &'a str) -> Option<Option<&'a str>> {
+        self.get_attribute_values(name).next()
     }
 
-    /// Gets an iterator over all attribute values of the given name, if existing.
+    /// Gets an iterator over all attribute values of the given name.
     pub fn get_attribute_values<'a>(
         &'a self,
         name: &'a str,
-    ) -> Result<impl Iterator<Item = Option<&'a str>> + 'a, AttributeError> {
-        let mut iter = self
-            .attributes
+    ) -> impl Iterator<Item = Option<&'a str>> {
+        self.attributes
             .iter()
             .filter(move |a| a.attribute == name)
             .map(|a| a.value.as_deref())
-            .peekable();
-        if iter.peek().is_some() {
-            Ok(iter)
-        } else {
-            Err(AttributeError::NotFound(name.to_string()))
-        }
     }
 
-    /// Gets the first value of the given typed attribute, if existing.
-    pub fn get_first_attribute_typed<T: TypedAttribute>(&self) -> Result<T, AttributeError> {
-        self.attributes_typed()
-            .next()
-            .unwrap_or_else(|| Err(AttributeError::NotFound(T::NAME.to_string())))
+    /// Gets the first value of the given typed attribute.
+    pub fn get_first_attribute_typed<T: TypedAttribute>(
+        &self,
+    ) -> Option<Result<T, AttributeError>> {
+        self.attributes_typed().next()
     }
 
     /// Gets an iterator over all attribute values of the given name.
     ///
-    /// Each item is a `Result` with `T` in `Ok` and `AttributeError` in `Err`.
+    /// Each item represents the attribute parsing `Result`.
     ///
     /// The iterator does not terminate upon an error item; continues with the next attribute
     pub fn attributes_typed<'a, T: TypedAttribute>(
@@ -1011,21 +1002,16 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
 
         assert_eq!(
             media.get_first_attribute_value("rtpmap"),
-            Ok(Some("99 h263-1998/90000"))
+            Some(Some("99 h263-1998/90000"))
         );
         assert_eq!(
             media.get_first_attribute_value("rtcp"),
-            Ok(Some("53020 IN IP4 126.16.64.4"))
+            Some(Some("53020 IN IP4 126.16.64.4"))
         );
-        let err = media.get_first_attribute_value("foo").unwrap_err();
-        assert_eq!(err, AttributeError::NotFound("foo".to_string()));
-        assert!(err.is_attribute_not_found());
+        assert!(media.get_first_attribute_value("foo").is_none());
 
         assert_eq!(
-            media
-                .get_attribute_values("rtpmap")
-                .unwrap()
-                .collect::<Vec<_>>(),
+            media.get_attribute_values("rtpmap").collect::<Vec<_>>(),
             &[
                 Some("99 h263-1998/90000"),
                 Some("100 h264/90000"),
@@ -1052,7 +1038,7 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
 
         assert_eq!(
             media.get_first_attribute_value("fmtp"),
-            Ok(Some(
+            Some(Some(
                 "100 profile-level-id=42e016;max-mbps=108000;max-fs=3600"
             ))
         );
@@ -1061,19 +1047,18 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
         assert_eq!(r[0].as_ref().unwrap().addrtype, AddrType::Ip4);
         assert_eq!(r[0].as_ref().unwrap().port, 53020);
 
-        let rtcp_attr = media.get_first_attribute_typed::<Rtcp>().unwrap();
+        let rtcp_attr = media.get_first_attribute_typed::<Rtcp>().unwrap().unwrap();
         assert_eq!(rtcp_attr.addrtype, AddrType::Ip4);
         assert_eq!(rtcp_attr.port, 53020);
 
         assert_eq!(
             media
                 .get_attribute_values("fingerprint")
-                .unwrap()
                 .collect::<Vec<_>>(),
             &[Some("custom A1:B2:C3:D4:E5:F6")]
         );
 
-        assert!(media.get_attribute_values("foo").is_err());
+        assert!(media.get_attribute_values("foo").next().is_none());
     }
 
     #[test]
@@ -1148,7 +1133,7 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
 
         assert_eq!(
             session.get_first_attribute_value("rtpmap"),
-            Ok(Some("99 h263-1998/90000"))
+            Some(Some("99 h263-1998/90000"))
         );
 
         let v = session
@@ -1162,24 +1147,22 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
         assert_ne!(rtpmap.encoding_params, Some("2".to_string()));
         assert_eq!(rtpmap.payload_type, 99);
 
-        let rtpmap = session.get_first_attribute_typed::<RtpMap>().unwrap();
+        let rtpmap = session
+            .get_first_attribute_typed::<RtpMap>()
+            .unwrap()
+            .unwrap();
         assert_eq!(rtpmap.clock_rate, 90000);
         assert_eq!(rtpmap.encoding_name, "h263-1998");
         assert_ne!(rtpmap.encoding_name, "h263");
         assert_ne!(rtpmap.encoding_params, Some("2".to_string()));
         assert_eq!(rtpmap.payload_type, 99);
 
-        assert_eq!(session.get_first_attribute_value("rtcp"), Ok(None));
+        assert_eq!(session.get_first_attribute_value("rtcp"), Some(None));
 
-        let err = session.get_first_attribute_value("foo").unwrap_err();
-        assert_eq!(err, AttributeError::NotFound("foo".to_string()));
-        assert!(err.is_attribute_not_found());
+        assert!(session.get_first_attribute_value("foo").is_none());
 
         assert_eq!(
-            session
-                .get_attribute_values("rtpmap")
-                .unwrap()
-                .collect::<Vec<_>>(),
+            session.get_attribute_values("rtpmap").collect::<Vec<_>>(),
             &[
                 Some("99 h263-1998/90000"),
                 Some("100 h264/90000"),
@@ -1187,22 +1170,16 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
             ]
         );
         assert_eq!(
-            session
-                .get_attribute_values("rtcp")
-                .unwrap()
-                .collect::<Vec<_>>(),
+            session.get_attribute_values("rtcp").collect::<Vec<_>>(),
             &[None]
         );
 
         assert_eq!(
-            session
-                .get_attribute_values("extmap")
-                .unwrap()
-                .collect::<Vec<_>>(),
+            session.get_attribute_values("extmap").collect::<Vec<_>>(),
             &[Some("1 URI-toffset")]
         );
 
-        assert!(session.get_attribute_values("foo").is_err());
+        assert!(session.get_attribute_values("foo").next().is_none());
 
         let a = fallible_iterator::convert(session.attributes_typed::<RtpMap>())
             .collect::<Vec<_>>()
