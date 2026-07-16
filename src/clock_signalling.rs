@@ -257,6 +257,11 @@ impl NtpServerAddr {
     pub fn new_traceable() -> NtpServerAddr {
         NtpServerAddr::Traceable
     }
+
+    /// Constructs a [`crate::builders::NtpServerAddr`] from the specified hostname.
+    pub fn builder(hostname: impl ToString) -> crate::builders::NtpServerAddr {
+        crate::builders::NtpServerAddr::new(hostname)
+    }
 }
 
 impl FromStr for NtpServerAddr {
@@ -710,6 +715,11 @@ impl ClockSourceExt {
     pub fn set_value(&mut self, value: impl ToString) {
         self.value = Some(value.to_string());
     }
+
+    /// Constructs a [`crate::builders::ClockSourceExt`].
+    pub fn builder(name: impl ToString) -> crate::builders::ClockSourceExt {
+        crate::builders::ClockSourceExt::new(name)
+    }
 }
 
 impl FromStr for ClockSourceExt {
@@ -863,6 +873,11 @@ impl MediaClockSource {
 
     pub fn set_id(&mut self, id: MediaClockId) {
         self.id = Some(id);
+    }
+
+    /// Constructs a [`crate::builders::MediaClockSource`].
+    pub fn builder(clock: impl Into<MediaClock>) -> crate::builders::MediaClockSource {
+        crate::builders::MediaClockSource::new(clock)
     }
 }
 
@@ -1158,6 +1173,11 @@ impl Direct {
             rate: Some(rate.into()),
         }
     }
+
+    /// Constructs a [`crate::builders::Direct`].
+    pub fn builder() -> crate::builders::Direct {
+        crate::builders::Direct::new()
+    }
 }
 
 impl FromStr for Direct {
@@ -1258,6 +1278,11 @@ impl MediaClockExt {
 
     pub fn set_value(&mut self, value: impl ToString) {
         self.value = Some(value.to_string());
+    }
+
+    /// Constructs a [`crate::builders::MediaClockExt`].
+    pub fn builder(name: impl ToString) -> crate::builders::MediaClockExt {
+        crate::builders::MediaClockExt::new(name)
     }
 }
 

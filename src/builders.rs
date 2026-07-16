@@ -2,7 +2,7 @@
 
 //! Builders for the `sdp_types` `struct`s
 
-use crate::{attributes, enums};
+use crate::{attributes, clock_signalling, enums};
 use std::net::IpAddr;
 
 /// A [`crate::Origin`] builder.
@@ -1389,10 +1389,201 @@ impl Candidate {
     }
 }
 
+/// An [`crate::NtpServerAddr`] builder.
+#[derive(Debug)]
+pub struct NtpServerAddr(clock_signalling::NtpServerAddr);
+impl NtpServerAddr {
+    pub fn new(hostname: impl ToString) -> Self {
+        Self(clock_signalling::NtpServerAddr::from_hostname(hostname))
+    }
+
+    pub fn port(mut self, port: u16) -> Self {
+        let clock_signalling::NtpServerAddr::HostPort { port: port_opt, .. } = &mut self.0 else {
+            unreachable!("Builder constructed from hostname");
+        };
+        *port_opt = Some(port);
+
+        self
+    }
+
+    pub fn port_if(mut self, port: u16, predicate: bool) -> Self {
+        if predicate {
+            self = self.port(port);
+        }
+        self
+    }
+
+    pub fn port_if_some(mut self, port: Option<u16>) -> Self {
+        if let Some(port) = port {
+            self = self.port(port);
+        }
+        self
+    }
+
+    pub fn build(self) -> clock_signalling::NtpServerAddr {
+        self.0
+    }
+}
+
+/// An [`ClockSourceExt`] builder.
+#[derive(Debug)]
+pub struct ClockSourceExt(clock_signalling::ClockSourceExt);
+impl ClockSourceExt {
+    pub fn new(name: impl ToString) -> Self {
+        Self(clock_signalling::ClockSourceExt::new(name))
+    }
+
+    pub fn value(mut self, value: impl ToString) -> Self {
+        self.0.set_value(value);
+        self
+    }
+
+    pub fn value_if(mut self, value: impl ToString, predicate: bool) -> Self {
+        if predicate {
+            self.0.set_value(value);
+        }
+        self
+    }
+
+    pub fn value_if_some(mut self, value: Option<impl ToString>) -> Self {
+        if let Some(value) = value {
+            self.0.set_value(value);
+        }
+        self
+    }
+
+    pub fn build(self) -> clock_signalling::ClockSourceExt {
+        self.0
+    }
+}
+
+/// A [`crate::MediaClockSource`] builder.
+#[derive(Debug)]
+pub struct MediaClockSource(clock_signalling::MediaClockSource);
+impl MediaClockSource {
+    pub fn new(clock: impl Into<clock_signalling::MediaClock>) -> Self {
+        Self(clock_signalling::MediaClockSource::new(clock))
+    }
+
+    pub fn id(mut self, id: clock_signalling::MediaClockId) -> Self {
+        self.0.set_id(id);
+        self
+    }
+
+    pub fn id_if(mut self, id: clock_signalling::MediaClockId, predicate: bool) -> Self {
+        if predicate {
+            self.0.set_id(id);
+        }
+        self
+    }
+
+    pub fn id_if_some(mut self, id: Option<clock_signalling::MediaClockId>) -> Self {
+        if let Some(id) = id {
+            self.0.set_id(id);
+        }
+        self
+    }
+
+    pub fn build(self) -> clock_signalling::MediaClockSource {
+        self.0
+    }
+}
+
+/// A [`Direct`] builder.
+#[derive(Debug)]
+pub struct Direct(clock_signalling::Direct);
+impl Direct {
+    pub fn new() -> Self {
+        Self(clock_signalling::Direct::new())
+    }
+
+    pub fn offset(mut self, offset: u32) -> Self {
+        self.0.set_offset(offset);
+        self
+    }
+
+    pub fn offset_if(mut self, offset: u32, predicate: bool) -> Self {
+        if predicate {
+            self.0.set_offset(offset);
+        }
+        self
+    }
+
+    pub fn offset_if_some(mut self, offset: Option<u32>) -> Self {
+        if let Some(offset) = offset {
+            self.0.set_offset(offset);
+        }
+        self
+    }
+
+    pub fn rate(mut self, rate: impl Into<clock_signalling::Rate>) -> Self {
+        self.0.set_rate(rate);
+        self
+    }
+
+    pub fn rate_if(mut self, rate: impl Into<clock_signalling::Rate>, predicate: bool) -> Self {
+        if predicate {
+            self.0.set_rate(rate);
+        }
+        self
+    }
+
+    pub fn rate_if_some(mut self, rate: Option<impl Into<clock_signalling::Rate>>) -> Self {
+        if let Some(rate) = rate {
+            self.0.set_rate(rate);
+        }
+        self
+    }
+
+    pub fn build(self) -> clock_signalling::Direct {
+        self.0
+    }
+}
+
+impl Default for Direct {
+    fn default() -> Self {
+        Direct::new()
+    }
+}
+
+/// A [`MediaClockExt`] builder.
+#[derive(Debug)]
+pub struct MediaClockExt(clock_signalling::MediaClockExt);
+impl MediaClockExt {
+    pub fn new(name: impl ToString) -> Self {
+        Self(clock_signalling::MediaClockExt::new(name))
+    }
+
+    pub fn value(mut self, value: impl ToString) -> Self {
+        self.0.set_value(value);
+        self
+    }
+
+    pub fn value_if(mut self, value: impl ToString, predicate: bool) -> Self {
+        if predicate {
+            self.0.set_value(value);
+        }
+        self
+    }
+
+    pub fn value_if_some(mut self, value: Option<impl ToString>) -> Self {
+        if let Some(value) = value {
+            self.0.set_value(value);
+        }
+        self
+    }
+
+    pub fn build(self) -> clock_signalling::MediaClockExt {
+        self.0
+    }
+
+    pub fn build_media_clock(self) -> clock_signalling::MediaClock {
+        self.0.into()
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::{ReferenceClock, Rtcp};
-
     #[test]
     fn builder() {
         use crate::{
@@ -1415,7 +1606,9 @@ mod test {
         const AUDIO_PARAMS: u8 = 2;
         const SSRC: u32 = 1234;
         const CNAME: &str = "user@test.org";
-        const REFCLK: ReferenceClock = ReferenceClock::Local;
+        const REFCLK_NTP_HOSTNAME: &str = "192.168.0.2";
+        const REFCLK_NTP_PORT: u16 = 5000;
+        const MEDIACLK_OFFSET: u32 = 123456;
 
         let sdp = Session::builder(
             Origin::builder_with_ip_addr(
@@ -1443,10 +1636,24 @@ mod test {
                 AUDIO_PARAMS,
             ))
             .attribute(Ssrc::with_value(SSRC, SsrcAttribute::Cname, CNAME))
-            .attribute(Ssrc::with_typed_attribute(SSRC, ReferenceClock::Local))
             .attribute(Ssrc::with_typed_attribute(
                 SSRC,
-                Rtcp::with_ip_addr(
+                crate::ReferenceClock::from(
+                    crate::NtpServerAddr::builder(REFCLK_NTP_HOSTNAME)
+                        .port(REFCLK_NTP_PORT)
+                        .build(),
+                ),
+            ))
+            .attribute(Ssrc::with_typed_attribute(
+                SSRC,
+                crate::MediaClockSource::builder(
+                    crate::Direct::builder().offset(MEDIACLK_OFFSET).build(),
+                )
+                .build(),
+            ))
+            .attribute(Ssrc::with_typed_attribute(
+                SSRC,
+                crate::Rtcp::with_ip_addr(
                     SENDER_RTCP_PORT,
                     Ipv4Addr::from_str(SENDER_ADDRESS).unwrap(),
                 ),
@@ -1509,7 +1716,13 @@ mod test {
                         },
                         Attribute {
                             attribute: "ssrc".to_string(),
-                            value: Some(format!("{SSRC} ts-refclk:{REFCLK}")),
+                            value: Some(format!(
+                                "{SSRC} ts-refclk:ntp={REFCLK_NTP_HOSTNAME}:{REFCLK_NTP_PORT}"
+                            )),
+                        },
+                        Attribute {
+                            attribute: "ssrc".to_string(),
+                            value: Some(format!("{SSRC} mediaclk:direct={MEDIACLK_OFFSET}")),
                         },
                         Attribute {
                             attribute: "ssrc".to_string(),
