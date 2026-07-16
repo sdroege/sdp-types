@@ -1136,6 +1136,11 @@ impl Rate {
             denominator,
         }
     }
+
+    /// Whether this Rate is the 1/1 fraction.
+    pub fn is_one(&self) -> bool {
+        self.numerator == 1 && self.denominator == 1
+    }
 }
 
 impl From<(u32, u32)> for Rate {
