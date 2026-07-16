@@ -816,13 +816,17 @@ pub enum SsrcAttribute {
     Fmtp,
     /// Rtcp attribute
     Rtcp,
+    /// Reference Clock attribute
+    ReferenceClock,
+    /// Media Clock Source attribute
+    MediaClockSource,
     /// See [RFC 5576 Section 6.4](https://datatracker.ietf.org/doc/html/rfc5576#section-6.4)
     Other(String),
 }
 
 impl SsrcAttribute {
     pub fn new(attribute: impl AsRef<str>) -> Self {
-        use crate::{Fmtp, Rtcp};
+        use crate::{Fmtp, MediaClockSource, ReferenceClock, Rtcp};
 
         let attr = attribute.as_ref();
         if "cname".eq_ignore_ascii_case(attr) {
@@ -833,19 +837,25 @@ impl SsrcAttribute {
             SsrcAttribute::Fmtp
         } else if <Rtcp as TypedAttribute>::NAME.eq_ignore_ascii_case(attr) {
             SsrcAttribute::Rtcp
+        } else if <ReferenceClock as TypedAttribute>::NAME.eq_ignore_ascii_case(attr) {
+            SsrcAttribute::ReferenceClock
+        } else if <MediaClockSource as TypedAttribute>::NAME.eq_ignore_ascii_case(attr) {
+            SsrcAttribute::MediaClockSource
         } else {
             SsrcAttribute::Other(attr.to_string())
         }
     }
 
     pub fn as_str(&self) -> &str {
-        use crate::{Fmtp, Rtcp};
+        use crate::{Fmtp, MediaClockSource, ReferenceClock, Rtcp};
 
         match self {
             SsrcAttribute::Cname => "cname",
             SsrcAttribute::PreviousSsrc => "previous-ssrc",
             SsrcAttribute::Fmtp => <Fmtp as TypedAttribute>::NAME,
             SsrcAttribute::Rtcp => <Rtcp as TypedAttribute>::NAME,
+            SsrcAttribute::ReferenceClock => <ReferenceClock as TypedAttribute>::NAME,
+            SsrcAttribute::MediaClockSource => <MediaClockSource as TypedAttribute>::NAME,
             SsrcAttribute::Other(other) => other.as_str(),
         }
     }

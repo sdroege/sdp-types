@@ -1391,7 +1391,7 @@ impl Candidate {
 
 #[cfg(test)]
 mod test {
-    use crate::Rtcp;
+    use crate::{ReferenceClock, Rtcp};
 
     #[test]
     fn builder() {
@@ -1415,7 +1415,7 @@ mod test {
         const AUDIO_PARAMS: u8 = 2;
         const SSRC: u32 = 1234;
         const CNAME: &str = "user@test.org";
-        const REFCLK: &str = "local";
+        const REFCLK: ReferenceClock = ReferenceClock::Local;
 
         let sdp = Session::builder(
             Origin::builder_with_ip_addr(
@@ -1443,11 +1443,7 @@ mod test {
                 AUDIO_PARAMS,
             ))
             .attribute(Ssrc::with_value(SSRC, SsrcAttribute::Cname, CNAME))
-            .attribute(Ssrc::with_value(
-                SSRC,
-                SsrcAttribute::new("ts-refclk"),
-                REFCLK,
-            ))
+            .attribute(Ssrc::with_typed_attribute(SSRC, ReferenceClock::Local))
             .attribute(Ssrc::with_typed_attribute(
                 SSRC,
                 Rtcp::with_ip_addr(
