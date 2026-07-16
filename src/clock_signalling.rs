@@ -1690,22 +1690,19 @@ mod tests {
                    ";
 
         let medias = crate::Session::parse(sdp.as_bytes()).unwrap().medias;
-        let refclk = medias[0]
-            .get_first_attribute_typed::<ReferenceClock>()
-            .unwrap();
-        assert_eq!(refclk, ReferenceClock::Local);
-        let mediaclk = medias[0]
-            .get_first_attribute_typed::<MediaClockSource>()
-            .unwrap();
         assert_eq!(
-            mediaclk,
-            MediaClockSource {
+            medias[0].get_first_attribute_typed::<ReferenceClock>(),
+            Some(Ok(ReferenceClock::Local))
+        );
+        assert_eq!(
+            medias[0].get_first_attribute_typed::<MediaClockSource>(),
+            Some(Ok(MediaClockSource {
                 id: None,
                 clock: MediaClock::Direct(Direct {
                     offset: Some(654321),
                     rate: None
                 })
-            }
+            })),
         );
 
         let ssrc_attrs = medias[0].attributes_typed::<Ssrc>();
