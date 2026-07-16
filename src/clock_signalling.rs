@@ -35,19 +35,19 @@ impl ReferenceClock {
     }
 
     /// Constructs a PTP [`ReferenceClock`] from the specified [`PtpVersion`] and GMID.
-    pub fn from_ptp_gmid(version: PtpVersion, gmid: Eui64) -> Self {
+    pub fn from_ptp_gmid(version: PtpVersion, gmid: impl Into<Eui64>) -> Self {
         Ptp::from_gmid(version, gmid).into()
     }
 
     /// Constructs a PTP [`ReferenceClock`] from the specified GMID and [`PtpDomain`].
-    pub fn from_ptp_gmid_with_domain(gmid: Eui64, domain: PtpDomain) -> Self {
+    pub fn from_ptp_gmid_with_domain(gmid: impl Into<Eui64>, domain: PtpDomain) -> Self {
         Ptp::from_gmid_with_domain(gmid, domain).into()
     }
 
     /// Constructs a PTP [`ReferenceClock`] from the specified GMID and domain name.
     ///
     /// This will assign version IEEE 1588-2002.
-    pub fn from_ptp_gmid_with_domain_name(gmid: Eui64, name: impl ToString) -> Self {
+    pub fn from_ptp_gmid_with_domain_name(gmid: impl Into<Eui64>, name: impl ToString) -> Self {
         Ptp::from_gmid_with_domain_name(gmid, name).into()
     }
 
@@ -57,7 +57,7 @@ impl ReferenceClock {
     ///
     /// Returns an `Error` if `number` is not in range (0-127) (inclusive)
     pub fn try_from_ptp_gmid_with_domain_number(
-        gmid: Eui64,
+        gmid: impl Into<Eui64>,
         number: u8,
     ) -> Result<Self, AttributeError> {
         Ok(Ptp::try_from_gmid_with_domain_number(gmid, number)?.into())
@@ -336,7 +336,7 @@ impl Ptp {
     }
 
     /// Constructs a [`Ptp`] from the specified [`PtpVersion`] and GMID.
-    pub fn from_gmid(version: PtpVersion, gmid: Eui64) -> Self {
+    pub fn from_gmid(version: PtpVersion, gmid: impl Into<Eui64>) -> Self {
         Ptp {
             version,
             server: PtpServer::from_gmid(gmid),
@@ -344,7 +344,7 @@ impl Ptp {
     }
 
     /// Constructs a [`Ptp`] from the specified GMID and [`PtpDomain`].
-    pub fn from_gmid_with_domain(gmid: Eui64, domain: PtpDomain) -> Self {
+    pub fn from_gmid_with_domain(gmid: impl Into<Eui64>, domain: PtpDomain) -> Self {
         let version = match domain {
             PtpDomain::DomainName { .. } => PtpVersion::Ieee1588_2002,
             PtpDomain::DomainNumber(_) => PtpVersion::Ieee1588_2008,
@@ -359,7 +359,7 @@ impl Ptp {
     /// Constructs a [`Ptp`] from the specified GMID and domain name.
     ///
     /// This will assign version IEEE 1588-2002.
-    pub fn from_gmid_with_domain_name(gmid: Eui64, name: impl ToString) -> Self {
+    pub fn from_gmid_with_domain_name(gmid: impl Into<Eui64>, name: impl ToString) -> Self {
         Self::from_gmid_with_domain(gmid, PtpDomain::from_name(name))
     }
 
@@ -369,7 +369,7 @@ impl Ptp {
     ///
     /// Returns an `Error` if `number` is not in range (0-127) (inclusive)
     pub fn try_from_gmid_with_domain_number(
-        gmid: Eui64,
+        gmid: impl Into<Eui64>,
         number: u8,
     ) -> Result<Self, AttributeError> {
         Ok(Self::from_gmid_with_domain(
@@ -478,14 +478,17 @@ pub enum PtpServer {
 
 impl PtpServer {
     /// Constructs a [`PtpServer`] from the specified GMID.
-    pub fn from_gmid(gmid: Eui64) -> Self {
-        PtpServer::GmidDomain { gmid, domain: None }
+    pub fn from_gmid(gmid: impl Into<Eui64>) -> Self {
+        PtpServer::GmidDomain {
+            gmid: gmid.into(),
+            domain: None,
+        }
     }
 
     /// Constructs a [`PtpServer`] from the specified GMID and [`PtpDomain`].
-    pub fn from_gmid_with_domain(gmid: Eui64, domain: PtpDomain) -> Self {
+    pub fn from_gmid_with_domain(gmid: impl Into<Eui64>, domain: PtpDomain) -> Self {
         PtpServer::GmidDomain {
-            gmid,
+            gmid: gmid.into(),
             domain: Some(domain),
         }
     }
@@ -493,9 +496,9 @@ impl PtpServer {
     /// Constructs a [`PtpServer`] from the specified GMID and domain name.
     ///
     /// This will assign version IEEE 1588-2002.
-    pub fn from_gmid_with_domain_name(gmid: Eui64, name: impl ToString) -> Self {
+    pub fn from_gmid_with_domain_name(gmid: impl Into<Eui64>, name: impl ToString) -> Self {
         PtpServer::GmidDomain {
-            gmid,
+            gmid: gmid.into(),
             domain: Some(PtpDomain::from_name(name)),
         }
     }
@@ -504,11 +507,11 @@ impl PtpServer {
     ///
     /// Returns an `Error` if `number` is not in range (0-127) (inclusive)
     pub fn try_from_ptp_gmid_with_domain_number(
-        gmid: Eui64,
+        gmid: impl Into<Eui64>,
         number: u8,
     ) -> Result<Self, AttributeError> {
         Ok(PtpServer::GmidDomain {
-            gmid,
+            gmid: gmid.into(),
             domain: Some(PtpDomain::try_from_number(number)?),
         })
     }
@@ -559,9 +562,21 @@ impl fmt::Display for PtpServer {
 }
 
 /// EUI-64 identifier.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Eui64 {
     pub bytes: [u8; 8],
+}
+
+impl Eui64 {
+    pub fn new(id: u64) -> Self {
+        Self {
+            bytes: id.to_be_bytes(),
+        }
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        u64::from_be_bytes(self.bytes)
+    }
 }
 
 impl FromStr for Eui64 {
@@ -593,6 +608,12 @@ impl FromStr for Eui64 {
         }
 
         Ok(Self { bytes })
+    }
+}
+
+impl From<u64> for Eui64 {
+    fn from(id: u64) -> Self {
+        Eui64::new(id)
     }
 }
 
