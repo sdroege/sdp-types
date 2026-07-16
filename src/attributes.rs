@@ -58,6 +58,58 @@ impl AttributeError {
     pub fn is_attribute_not_found(&self) -> bool {
         matches!(self, AttributeError::NotFound(_))
     }
+
+    /// Preprends the provided `param_context` to the parameter field of this AttributeError if applicable
+    fn add_param_context(&mut self, param_context: &str) {
+        use AttributeError::*;
+        match self {
+            NotFound(_)
+            | Other { .. }
+            | UnsupportedFormat { .. }
+            | UnexpectedTrailingItem { .. } => (),
+            ParamNotFound { param, .. } | InvalidParamValue { param, .. } => {
+                param.push(')');
+                param.insert_str(0, " (");
+                param.insert_str(0, param_context);
+            }
+        }
+    }
+
+    /// Sets the attribute field of this AttributeError to new_attr
+    pub(crate) fn set_attr(&mut self, new_attr: impl ToString) {
+        use AttributeError::*;
+        match self {
+            NotFound(attr)
+            | ParamNotFound { attr, .. }
+            | InvalidParamValue { attr, .. }
+            | UnsupportedFormat { attr, .. }
+            | UnexpectedTrailingItem { attr, .. }
+            | Other { attr, .. } => *attr = new_attr.to_string(),
+        }
+    }
+}
+
+pub(crate) trait ErrorContext {
+    fn with_param_context(self, param_context: &str) -> Self;
+    fn with_attr(self, new_attr: impl ToString) -> Self;
+}
+
+impl<T> ErrorContext for Result<T, AttributeError> {
+    /// Returns this error with the provided `param_context` prepended to the parameter field if applicable
+    fn with_param_context(self, param_context: &str) -> Self {
+        self.map_err(|mut err| {
+            err.add_param_context(param_context);
+            err
+        })
+    }
+
+    /// Returns this error with the attribute field set to new_attr
+    fn with_attr(self, new_attr: impl ToString) -> Self {
+        self.map_err(|mut err| {
+            err.set_attr(new_attr);
+            err
+        })
+    }
 }
 
 /// RtpMap Attribute
@@ -1207,13 +1259,15 @@ impl FromStr for Ssrc {
 
 impl Display for Ssrc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use crate::{Fmtp, Rtcp};
+        use crate::{Fmtp, MediaClockSource, ReferenceClock, Rtcp};
 
         let attr_str = match &self.attribute {
             SsrcAttribute::Cname => "cname",
             SsrcAttribute::PreviousSsrc => "previous-ssrc",
             SsrcAttribute::Fmtp => <Fmtp as TypedAttribute>::NAME,
             SsrcAttribute::Rtcp => <Rtcp as TypedAttribute>::NAME,
+            SsrcAttribute::ReferenceClock => <ReferenceClock as TypedAttribute>::NAME,
+            SsrcAttribute::MediaClockSource => <MediaClockSource as TypedAttribute>::NAME,
             SsrcAttribute::Other(other) => other.as_str(),
         };
         write!(f, "{} {attr_str}", self.ssrc_id)?;

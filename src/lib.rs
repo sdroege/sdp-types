@@ -67,11 +67,13 @@ use fallible_iterator::FallibleIterator;
 
 pub mod attributes;
 pub mod builders;
+pub mod clock_signalling;
 pub mod enums;
 mod parser;
 mod writer;
 
 pub use attributes::*;
+pub use clock_signalling::*;
 pub use enums::*;
 pub use parser::ParserError;
 
