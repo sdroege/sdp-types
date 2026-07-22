@@ -439,13 +439,13 @@ impl Display for TransportProto {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HashFunc {
-    SHA1,
-    SHA224,
-    SHA256,
-    SHA384,
-    SHA512,
-    MD5,
-    MD2,
+    Sha1,
+    Sha224,
+    Sha256,
+    Sha384,
+    Sha512,
+    Md5,
+    Md2,
     Other(String),
 }
 
@@ -454,19 +454,19 @@ impl HashFunc {
         let hash_func = hash_func.as_ref();
 
         if hash_func.eq_ignore_ascii_case("sha-1") {
-            HashFunc::SHA1
+            HashFunc::Sha1
         } else if hash_func.eq_ignore_ascii_case("sha-224") {
-            HashFunc::SHA224
+            HashFunc::Sha224
         } else if hash_func.eq_ignore_ascii_case("sha-256") {
-            HashFunc::SHA256
+            HashFunc::Sha256
         } else if hash_func.eq_ignore_ascii_case("sha-384") {
-            HashFunc::SHA384
+            HashFunc::Sha384
         } else if hash_func.eq_ignore_ascii_case("sha-512") {
-            HashFunc::SHA512
+            HashFunc::Sha512
         } else if hash_func.eq_ignore_ascii_case("md-5") {
-            HashFunc::MD5
+            HashFunc::Md5
         } else if hash_func.eq_ignore_ascii_case("md-2") {
-            HashFunc::MD2
+            HashFunc::Md2
         } else {
             HashFunc::Other(hash_func.to_string())
         }
@@ -474,13 +474,13 @@ impl HashFunc {
 
     pub fn as_str(&self) -> &str {
         match self {
-            HashFunc::SHA1 => "sha-1",
-            HashFunc::SHA224 => "sha-224",
-            HashFunc::SHA256 => "sha-256",
-            HashFunc::SHA384 => "sha-384",
-            HashFunc::SHA512 => "sha-512",
-            HashFunc::MD5 => "md-5",
-            HashFunc::MD2 => "md-2",
+            HashFunc::Sha1 => "sha-1",
+            HashFunc::Sha224 => "sha-224",
+            HashFunc::Sha256 => "sha-256",
+            HashFunc::Sha384 => "sha-384",
+            HashFunc::Sha512 => "sha-512",
+            HashFunc::Md5 => "md-5",
+            HashFunc::Md2 => "md-2",
             HashFunc::Other(s) => s.as_str(),
         }
     }

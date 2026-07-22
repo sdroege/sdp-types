@@ -906,7 +906,7 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
             .collect::<Vec<_>>()
             .expect("Vector of fingerprint attributes");
 
-        assert_eq!(f[0].hash_func, HashFunc::SHA256);
+        assert_eq!(f[0].hash_func, HashFunc::Sha256);
         assert_eq!(f[0].fingerprint[4], 0xB2);
         assert_eq!(f[0].fingerprint.last(), Some(&0xAA));
     }
