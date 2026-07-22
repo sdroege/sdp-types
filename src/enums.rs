@@ -765,8 +765,94 @@ pub enum RtcpFbVal {
     TrrInt(u64),
     /// Codec Control messages
     Ccm(RtcpFbCcm),
+    /// Transport-wide Congestion Control
+    TransportCc,
     /// Others Rtcp Fb types
     Other(String),
+}
+
+impl RtcpFbVal {
+    pub fn is_ack(&self) -> bool {
+        matches!(self, RtcpFbVal::Ack(None))
+    }
+
+    pub fn is_ack_rpsi(&self) -> bool {
+        matches!(self, RtcpFbVal::Ack(Some(RtcpFbAck::Rpsi)))
+    }
+
+    pub fn is_ack_app(&self) -> bool {
+        matches!(self, RtcpFbVal::Ack(Some(RtcpFbAck::App(_))))
+    }
+
+    pub fn is_ack_ccfb(&self) -> bool {
+        matches!(self, RtcpFbVal::Ack(Some(RtcpFbAck::Ccfb)))
+    }
+
+    pub fn is_nack(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(None))
+    }
+
+    pub fn is_nack_pli(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(Some(RtcpFbNack::Pli)))
+    }
+
+    pub fn is_nack_sli(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(Some(RtcpFbNack::Sli)))
+    }
+
+    pub fn is_nack_rpsi(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(Some(RtcpFbNack::Rpsi)))
+    }
+
+    pub fn is_nack_app(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(Some(RtcpFbNack::App(_))))
+    }
+
+    pub fn is_nack_ecn(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(Some(RtcpFbNack::Ecn)))
+    }
+
+    pub fn is_trr_int(&self) -> bool {
+        matches!(self, RtcpFbVal::TrrInt(_))
+    }
+
+    pub fn is_ccm_fir(&self) -> bool {
+        matches!(self, RtcpFbVal::Ccm(RtcpFbCcm::Fir))
+    }
+
+    pub fn is_ccm_tmmbr(&self) -> bool {
+        matches!(self, RtcpFbVal::Ccm(RtcpFbCcm::Tmmbr(_)))
+    }
+
+    pub fn is_ccm_tstr(&self) -> bool {
+        matches!(self, RtcpFbVal::Ccm(RtcpFbCcm::Tstr))
+    }
+
+    pub fn is_ccm_vbcm(&self) -> bool {
+        matches!(self, RtcpFbVal::Ccm(RtcpFbCcm::Vbcm(_)))
+    }
+
+    pub fn is_transport_cc(&self) -> bool {
+        matches!(self, RtcpFbVal::TransportCc)
+    }
+}
+
+impl From<RtcpFbAck> for RtcpFbVal {
+    fn from(value: RtcpFbAck) -> Self {
+        RtcpFbVal::Ack(Some(value))
+    }
+}
+
+impl From<RtcpFbNack> for RtcpFbVal {
+    fn from(value: RtcpFbNack) -> Self {
+        RtcpFbVal::Nack(Some(value))
+    }
+}
+
+impl From<RtcpFbCcm> for RtcpFbVal {
+    fn from(value: RtcpFbCcm) -> Self {
+        RtcpFbVal::Ccm(value)
+    }
 }
 
 impl Display for RtcpFbVal {
@@ -843,6 +929,7 @@ impl Display for RtcpFbVal {
                 }
                 Ok(())
             }
+            RtcpFbVal::TransportCc => f.write_str("transport-cc"),
             RtcpFbVal::Other(other) => f.write_str(other),
         }
     }
@@ -921,6 +1008,12 @@ pub enum RtcpFbPt {
     Fmt(u8),
     /// Applies to all formats
     Wildcard,
+}
+
+impl From<u8> for RtcpFbPt {
+    fn from(pt: u8) -> Self {
+        RtcpFbPt::Fmt(pt)
+    }
 }
 
 /// Candidate connection address type

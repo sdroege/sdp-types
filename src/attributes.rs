@@ -548,8 +548,11 @@ pub struct RtcpFb {
 }
 
 impl RtcpFb {
-    pub fn new(pt: RtcpFbPt, val: RtcpFbVal) -> Self {
-        RtcpFb { pt, val }
+    pub fn new(pt: impl Into<RtcpFbPt>, val: impl Into<RtcpFbVal>) -> Self {
+        RtcpFb {
+            pt: pt.into(),
+            val: val.into(),
+        }
     }
 }
 
@@ -692,6 +695,7 @@ impl FromStr for RtcpFb {
                     });
                 }
             }
+            "transport-cc" => RtcpFbVal::TransportCc,
             other => RtcpFbVal::Other(other.to_string()),
         };
 
@@ -809,7 +813,7 @@ impl From<Direction> for Attribute {
 /// RTP header extensions map
 ///
 /// See [RFC 8285 Section 8](https://datatracker.ietf.org/doc/html/rfc8285#section-8)
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ExtMap {
     /// The local identifier (ID) of this extension
