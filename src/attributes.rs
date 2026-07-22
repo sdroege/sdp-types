@@ -721,12 +721,13 @@ impl TypedAttribute for RtcpFb {
 /// Media Direction Attributes
 ///
 /// See [RFC 8866 Section 6.7](https://datatracker.ietf.org/doc/html/rfc8866#section-6.7)
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Direction {
+    #[default]
+    SendRecv,
     SendOnly,
     RecvOnly,
-    SendRecv,
     Inactive,
 }
 
@@ -737,6 +738,37 @@ impl Direction {
             Self::RecvOnly => "recvonly",
             Self::SendRecv => "sendrecv",
             Self::Inactive => "inactive",
+        }
+    }
+
+    pub fn has_send(self) -> bool {
+        matches!(self, Self::SendRecv | Self::SendOnly)
+    }
+
+    pub fn has_recv(self) -> bool {
+        matches!(self, Self::SendRecv | Self::RecvOnly)
+    }
+
+    pub fn reverse(self) -> Self {
+        match self {
+            Self::SendRecv => Self::SendRecv,
+            Self::SendOnly => Self::RecvOnly,
+            Self::RecvOnly => Self::SendOnly,
+            Self::Inactive => Self::Inactive,
+        }
+    }
+
+    pub fn intersect_with_remote(self, remote: Self) -> Self {
+        match (self, remote) {
+            (Self::Inactive, _)
+            | (_, Self::Inactive)
+            | (Self::RecvOnly, Self::RecvOnly)
+            | (Self::SendOnly, Self::SendOnly) => Self::Inactive,
+            (Self::SendRecv, Self::SendRecv) => Self::SendRecv,
+            (Self::SendOnly, Self::RecvOnly | Self::SendRecv)
+            | (Self::SendRecv, Self::RecvOnly) => Self::SendOnly,
+            (Self::RecvOnly, Self::SendRecv | Self::SendOnly)
+            | (Self::SendRecv, Self::SendOnly) => Self::RecvOnly,
         }
     }
 }
