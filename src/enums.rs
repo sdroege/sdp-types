@@ -335,7 +335,7 @@ impl Display for MediaType {
 /// Transport Protocol for the media
 ///
 /// See [RFC 8866 Section 5.14](https://datatracker.ietf.org/doc/html/rfc8866#section-5.14)
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TransportProto {
     /// Direct UDP
@@ -344,25 +344,49 @@ pub enum TransportProto {
     RtpAvp,
     /// Secure RTP over UDP
     RtpSavp,
+    /// RTP over UDP with RTCP-based feedback
+    RtpAvpf,
     /// Secure RTP over UDP with RTCP-based feedback
     RtpSavpf,
+    /// RTP over TCP/DTLS
+    TcpDtlsRtpSavp,
+    /// RTP over TCP/DTLS with RTCP-based feedback
+    TcpDtlsRtpSavpf,
+    /// RTP over UDP/TLS
+    UdpTlsRtpSavp,
+    /// RTP over UDP/TLS with RTCP-based feedback
+    UdpTlsRtpSavpf,
+    UdpDtlsSctp,
+    TcpDtlsSctp,
+    DtlsSctp,
+    Other(String),
 }
 
 impl TransportProto {
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             // The strings are case-insensitive, but the spec (RFC 8866) uses lower-case of the "udp" protocol
             // and upper-case for the others so keeping it the same
             TransportProto::Udp => "udp",
             TransportProto::RtpAvp => "RTP/AVP",
+            TransportProto::RtpAvpf => "RTP/AVPF",
             TransportProto::RtpSavp => "RTP/SAVP",
             TransportProto::RtpSavpf => "RTP/SAVPF",
+            TransportProto::TcpDtlsRtpSavp => "TCP/DTLS/RTP/SAVP",
+            TransportProto::TcpDtlsRtpSavpf => "TCP/DTLS/RTP/SAVPF",
+            TransportProto::UdpTlsRtpSavp => "UDP/TLS/RTP/SAVP",
+            TransportProto::UdpTlsRtpSavpf => "UDP/TLS/RTP/SAVPF",
+            TransportProto::UdpDtlsSctp => "UDP/DTLS/SCTP",
+            TransportProto::TcpDtlsSctp => "TCP/DTLS/SCTP",
+            TransportProto::DtlsSctp => "DTLS/SCTP",
+            TransportProto::Other(proto) => proto.as_str(),
         }
     }
 }
 
 impl FromStr for TransportProto {
-    type Err = ParseEnumError;
+    // FIXME use the never type when it is stable
+    type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // The strings are case-insensitive, but the spec (RFC 8866) uses lower-case of the "udp" protocol
@@ -371,13 +395,35 @@ impl FromStr for TransportProto {
             Ok(TransportProto::Udp)
         } else if "RTP/AVP".eq_ignore_ascii_case(s) {
             Ok(TransportProto::RtpAvp)
+        } else if "RTP/AVPF".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::RtpAvpf)
         } else if "RTP/SAVP".eq_ignore_ascii_case(s) {
             Ok(TransportProto::RtpSavp)
         } else if "RTP/SAVPF".eq_ignore_ascii_case(s) {
             Ok(TransportProto::RtpSavpf)
+        } else if "TCP/DTLS/RTP/SAVP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::TcpDtlsRtpSavp)
+        } else if "TCP/DTLS/RTP/SAVPF".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::TcpDtlsRtpSavpf)
+        } else if "UDP/TLS/RTP/SAVP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::UdpTlsRtpSavp)
+        } else if "UDP/TLS/RTP/SAVPF".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::UdpTlsRtpSavpf)
+        } else if "UDP/DTLS/SCTP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::UdpDtlsSctp)
+        } else if "TCP/DTLS/SCTP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::TcpDtlsSctp)
+        } else if "DTLS/SCTP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::DtlsSctp)
         } else {
-            Err(ParseEnumError::Invalid(s.to_string()))
+            Ok(TransportProto::Other(s.to_string()))
         }
+    }
+}
+
+impl From<&str> for TransportProto {
+    fn from(value: &str) -> Self {
+        TransportProto::from_str(value).expect("infallible")
     }
 }
 

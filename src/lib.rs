@@ -596,9 +596,9 @@ impl Media {
         self.media = media.to_string();
     }
 
-    /// Tries to parse the `proto` `String` of `self` as `TransportProto`
-    pub fn try_parse_transport_proto(&self) -> Result<TransportProto, ParseEnumError> {
-        TransportProto::from_str(self.proto.as_str())
+    /// Parses the `proto` `String` of `self` as `TransportProto`
+    pub fn parse_transport_proto(&self) -> TransportProto {
+        TransportProto::from(self.proto.as_str())
     }
 
     /// Sets the `proto` `String` of `self` from the specified `TransportProto`
@@ -882,8 +882,8 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
         );
         assert_eq!(parsed.medias[0].try_parse_mediatype(), Ok(MediaType::Audio));
         assert_ne!(
-            parsed.medias[1].try_parse_transport_proto(),
-            Ok(TransportProto::RtpSavpf)
+            parsed.medias[1].parse_transport_proto(),
+            TransportProto::RtpSavpf,
         );
         let f = fallible_iterator::convert(parsed.medias[0].attributes_typed::<Fmtp>())
             .collect::<Vec<_>>()
