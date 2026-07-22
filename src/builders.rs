@@ -363,6 +363,17 @@ impl Media {
         self
     }
 
+    pub fn attribute_with_value_if_some(
+        mut self,
+        attribute: impl ToString,
+        value: Option<impl ToString>,
+    ) -> Self {
+        if let Some(value) = value {
+            self.0.add_attribute_with_value(attribute, value);
+        }
+        self
+    }
+
     pub fn attributes(
         mut self,
         attributes: impl IntoIterator<Item = impl Into<crate::Attribute>>,
@@ -396,6 +407,16 @@ impl Media {
         predicate: bool,
     ) -> Self {
         if predicate {
+            self.0.add_attributes_from_strs(attributes);
+        }
+        self
+    }
+
+    pub fn attributes_from_strs_if_some(
+        mut self,
+        attributes: Option<impl IntoIterator<Item = impl ToString>>,
+    ) -> Self {
+        if let Some(attributes) = attributes {
             self.0.add_attributes_from_strs(attributes);
         }
         self
@@ -742,6 +763,17 @@ impl Session {
         self
     }
 
+    pub fn attribute_with_value_if_some(
+        mut self,
+        attribute: impl ToString,
+        value: Option<impl ToString>,
+    ) -> Self {
+        if let Some(value) = value {
+            self.0.add_attribute_with_value(attribute, value);
+        }
+        self
+    }
+
     pub fn attributes(
         mut self,
         attributes: impl IntoIterator<Item = impl Into<crate::Attribute>>,
@@ -785,6 +817,16 @@ impl Session {
         predicate: bool,
     ) -> Self {
         if predicate {
+            self.0.add_attributes_from_strs(attributes);
+        }
+        self
+    }
+
+    pub fn attributes_from_strs_if_some(
+        mut self,
+        attributes: Option<impl IntoIterator<Item = impl ToString>>,
+    ) -> Self {
+        if let Some(attributes) = attributes {
             self.0.add_attributes_from_strs(attributes);
         }
         self
@@ -851,6 +893,13 @@ impl RtpMap {
 
     pub fn encoding_params_if(mut self, encoding_params: impl ToString, predicate: bool) -> Self {
         if predicate {
+            self.0.set_encoding_params(encoding_params);
+        }
+        self
+    }
+
+    pub fn encoding_params_if_some(mut self, encoding_params: Option<impl ToString>) -> Self {
+        if let Some(encoding_params) = encoding_params {
             self.0.set_encoding_params(encoding_params);
         }
         self
@@ -990,6 +1039,13 @@ impl ExtMap {
         self
     }
 
+    pub fn attributes_if_some(mut self, attributes: Option<impl ToString>) -> Self {
+        if let Some(attributes) = attributes {
+            self.0.set_attributes(attributes);
+        }
+        self
+    }
+
     pub fn build(self) -> attributes::ExtMap {
         self.0
     }
@@ -1077,6 +1133,16 @@ impl Group {
         self
     }
 
+    pub fn mid_tags_if_some(
+        mut self,
+        mid_tags: Option<impl IntoIterator<Item = impl ToString>>,
+    ) -> Self {
+        if let Some(mid_tags) = mid_tags {
+            self.0.add_mid_tags(mid_tags);
+        }
+        self
+    }
+
     pub fn build(self) -> attributes::Group {
         self.0
     }
@@ -1153,6 +1219,13 @@ impl SsrcGroup {
         self
     }
 
+    pub fn ssrc_ids_if_some(mut self, ssrc_ids: Option<impl IntoIterator<Item = u32>>) -> Self {
+        if let Some(ssrc_ids) = ssrc_ids {
+            self.0.add_ssrc_ids(ssrc_ids);
+        }
+        self
+    }
+
     pub fn build(self) -> attributes::SsrcGroup {
         self.0
     }
@@ -1192,6 +1265,13 @@ impl SrtpKeyParam {
 
     pub fn mki_and_length_if(mut self, mki: u32, length: u32, predicate: bool) -> Self {
         if predicate {
+            self.0.set_mki_and_length(mki, length);
+        }
+        self
+    }
+
+    pub fn mki_and_length_if_some(mut self, mki_length: Option<(u32, u32)>) -> Self {
+        if let Some((mki, length)) = mki_length {
             self.0.set_mki_and_length(mki, length);
         }
         self
@@ -1300,6 +1380,16 @@ impl Crypto {
         self
     }
 
+    pub fn session_params_if_some(
+        mut self,
+        session_params: Option<impl IntoIterator<Item = enums::SrtpSessionParam>>,
+    ) -> Self {
+        if let Some(session_params) = session_params {
+            self.0.add_session_params(session_params);
+        }
+        self
+    }
+
     pub fn build(self) -> attributes::Crypto {
         self.0
     }
@@ -1379,6 +1469,13 @@ impl Candidate {
         predicate: bool,
     ) -> Self {
         if predicate {
+            self.0.add_extension(name, value);
+        }
+        self
+    }
+
+    pub fn extension_if_some(mut self, name_value: Option<(impl ToString, impl ToString)>) -> Self {
+        if let Some((name, value)) = name_value {
             self.0.add_extension(name, value);
         }
         self
