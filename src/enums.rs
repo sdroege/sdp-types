@@ -335,7 +335,7 @@ impl Display for MediaType {
 /// Transport Protocol for the media
 ///
 /// See [RFC 8866 Section 5.14](https://datatracker.ietf.org/doc/html/rfc8866#section-5.14)
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TransportProto {
     /// Direct UDP
@@ -344,25 +344,49 @@ pub enum TransportProto {
     RtpAvp,
     /// Secure RTP over UDP
     RtpSavp,
+    /// RTP over UDP with RTCP-based feedback
+    RtpAvpf,
     /// Secure RTP over UDP with RTCP-based feedback
     RtpSavpf,
+    /// RTP over TCP/DTLS
+    TcpDtlsRtpSavp,
+    /// RTP over TCP/DTLS with RTCP-based feedback
+    TcpDtlsRtpSavpf,
+    /// RTP over UDP/TLS
+    UdpTlsRtpSavp,
+    /// RTP over UDP/TLS with RTCP-based feedback
+    UdpTlsRtpSavpf,
+    UdpDtlsSctp,
+    TcpDtlsSctp,
+    DtlsSctp,
+    Other(String),
 }
 
 impl TransportProto {
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             // The strings are case-insensitive, but the spec (RFC 8866) uses lower-case of the "udp" protocol
             // and upper-case for the others so keeping it the same
             TransportProto::Udp => "udp",
             TransportProto::RtpAvp => "RTP/AVP",
+            TransportProto::RtpAvpf => "RTP/AVPF",
             TransportProto::RtpSavp => "RTP/SAVP",
             TransportProto::RtpSavpf => "RTP/SAVPF",
+            TransportProto::TcpDtlsRtpSavp => "TCP/DTLS/RTP/SAVP",
+            TransportProto::TcpDtlsRtpSavpf => "TCP/DTLS/RTP/SAVPF",
+            TransportProto::UdpTlsRtpSavp => "UDP/TLS/RTP/SAVP",
+            TransportProto::UdpTlsRtpSavpf => "UDP/TLS/RTP/SAVPF",
+            TransportProto::UdpDtlsSctp => "UDP/DTLS/SCTP",
+            TransportProto::TcpDtlsSctp => "TCP/DTLS/SCTP",
+            TransportProto::DtlsSctp => "DTLS/SCTP",
+            TransportProto::Other(proto) => proto.as_str(),
         }
     }
 }
 
 impl FromStr for TransportProto {
-    type Err = ParseEnumError;
+    // FIXME use the never type when it is stable
+    type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // The strings are case-insensitive, but the spec (RFC 8866) uses lower-case of the "udp" protocol
@@ -371,13 +395,35 @@ impl FromStr for TransportProto {
             Ok(TransportProto::Udp)
         } else if "RTP/AVP".eq_ignore_ascii_case(s) {
             Ok(TransportProto::RtpAvp)
+        } else if "RTP/AVPF".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::RtpAvpf)
         } else if "RTP/SAVP".eq_ignore_ascii_case(s) {
             Ok(TransportProto::RtpSavp)
         } else if "RTP/SAVPF".eq_ignore_ascii_case(s) {
             Ok(TransportProto::RtpSavpf)
+        } else if "TCP/DTLS/RTP/SAVP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::TcpDtlsRtpSavp)
+        } else if "TCP/DTLS/RTP/SAVPF".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::TcpDtlsRtpSavpf)
+        } else if "UDP/TLS/RTP/SAVP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::UdpTlsRtpSavp)
+        } else if "UDP/TLS/RTP/SAVPF".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::UdpTlsRtpSavpf)
+        } else if "UDP/DTLS/SCTP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::UdpDtlsSctp)
+        } else if "TCP/DTLS/SCTP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::TcpDtlsSctp)
+        } else if "DTLS/SCTP".eq_ignore_ascii_case(s) {
+            Ok(TransportProto::DtlsSctp)
         } else {
-            Err(ParseEnumError::Invalid(s.to_string()))
+            Ok(TransportProto::Other(s.to_string()))
         }
+    }
+}
+
+impl From<&str> for TransportProto {
+    fn from(value: &str) -> Self {
+        TransportProto::from_str(value).expect("infallible")
     }
 }
 
@@ -393,13 +439,13 @@ impl Display for TransportProto {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HashFunc {
-    SHA1,
-    SHA224,
-    SHA256,
-    SHA384,
-    SHA512,
-    MD5,
-    MD2,
+    Sha1,
+    Sha224,
+    Sha256,
+    Sha384,
+    Sha512,
+    Md5,
+    Md2,
     Other(String),
 }
 
@@ -408,19 +454,19 @@ impl HashFunc {
         let hash_func = hash_func.as_ref();
 
         if hash_func.eq_ignore_ascii_case("sha-1") {
-            HashFunc::SHA1
+            HashFunc::Sha1
         } else if hash_func.eq_ignore_ascii_case("sha-224") {
-            HashFunc::SHA224
+            HashFunc::Sha224
         } else if hash_func.eq_ignore_ascii_case("sha-256") {
-            HashFunc::SHA256
+            HashFunc::Sha256
         } else if hash_func.eq_ignore_ascii_case("sha-384") {
-            HashFunc::SHA384
+            HashFunc::Sha384
         } else if hash_func.eq_ignore_ascii_case("sha-512") {
-            HashFunc::SHA512
+            HashFunc::Sha512
         } else if hash_func.eq_ignore_ascii_case("md-5") {
-            HashFunc::MD5
+            HashFunc::Md5
         } else if hash_func.eq_ignore_ascii_case("md-2") {
-            HashFunc::MD2
+            HashFunc::Md2
         } else {
             HashFunc::Other(hash_func.to_string())
         }
@@ -428,13 +474,13 @@ impl HashFunc {
 
     pub fn as_str(&self) -> &str {
         match self {
-            HashFunc::SHA1 => "sha-1",
-            HashFunc::SHA224 => "sha-224",
-            HashFunc::SHA256 => "sha-256",
-            HashFunc::SHA384 => "sha-384",
-            HashFunc::SHA512 => "sha-512",
-            HashFunc::MD5 => "md-5",
-            HashFunc::MD2 => "md-2",
+            HashFunc::Sha1 => "sha-1",
+            HashFunc::Sha224 => "sha-224",
+            HashFunc::Sha256 => "sha-256",
+            HashFunc::Sha384 => "sha-384",
+            HashFunc::Sha512 => "sha-512",
+            HashFunc::Md5 => "md-5",
+            HashFunc::Md2 => "md-2",
             HashFunc::Other(s) => s.as_str(),
         }
     }
@@ -719,8 +765,94 @@ pub enum RtcpFbVal {
     TrrInt(u64),
     /// Codec Control messages
     Ccm(RtcpFbCcm),
+    /// Transport-wide Congestion Control
+    TransportCc,
     /// Others Rtcp Fb types
     Other(String),
+}
+
+impl RtcpFbVal {
+    pub fn is_ack(&self) -> bool {
+        matches!(self, RtcpFbVal::Ack(None))
+    }
+
+    pub fn is_ack_rpsi(&self) -> bool {
+        matches!(self, RtcpFbVal::Ack(Some(RtcpFbAck::Rpsi)))
+    }
+
+    pub fn is_ack_app(&self) -> bool {
+        matches!(self, RtcpFbVal::Ack(Some(RtcpFbAck::App(_))))
+    }
+
+    pub fn is_ack_ccfb(&self) -> bool {
+        matches!(self, RtcpFbVal::Ack(Some(RtcpFbAck::Ccfb)))
+    }
+
+    pub fn is_nack(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(None))
+    }
+
+    pub fn is_nack_pli(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(Some(RtcpFbNack::Pli)))
+    }
+
+    pub fn is_nack_sli(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(Some(RtcpFbNack::Sli)))
+    }
+
+    pub fn is_nack_rpsi(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(Some(RtcpFbNack::Rpsi)))
+    }
+
+    pub fn is_nack_app(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(Some(RtcpFbNack::App(_))))
+    }
+
+    pub fn is_nack_ecn(&self) -> bool {
+        matches!(self, RtcpFbVal::Nack(Some(RtcpFbNack::Ecn)))
+    }
+
+    pub fn is_trr_int(&self) -> bool {
+        matches!(self, RtcpFbVal::TrrInt(_))
+    }
+
+    pub fn is_ccm_fir(&self) -> bool {
+        matches!(self, RtcpFbVal::Ccm(RtcpFbCcm::Fir))
+    }
+
+    pub fn is_ccm_tmmbr(&self) -> bool {
+        matches!(self, RtcpFbVal::Ccm(RtcpFbCcm::Tmmbr(_)))
+    }
+
+    pub fn is_ccm_tstr(&self) -> bool {
+        matches!(self, RtcpFbVal::Ccm(RtcpFbCcm::Tstr))
+    }
+
+    pub fn is_ccm_vbcm(&self) -> bool {
+        matches!(self, RtcpFbVal::Ccm(RtcpFbCcm::Vbcm(_)))
+    }
+
+    pub fn is_transport_cc(&self) -> bool {
+        matches!(self, RtcpFbVal::TransportCc)
+    }
+}
+
+impl From<RtcpFbAck> for RtcpFbVal {
+    fn from(value: RtcpFbAck) -> Self {
+        RtcpFbVal::Ack(Some(value))
+    }
+}
+
+impl From<RtcpFbNack> for RtcpFbVal {
+    fn from(value: RtcpFbNack) -> Self {
+        RtcpFbVal::Nack(Some(value))
+    }
+}
+
+impl From<RtcpFbCcm> for RtcpFbVal {
+    fn from(value: RtcpFbCcm) -> Self {
+        RtcpFbVal::Ccm(value)
+    }
 }
 
 impl Display for RtcpFbVal {
@@ -797,6 +929,7 @@ impl Display for RtcpFbVal {
                 }
                 Ok(())
             }
+            RtcpFbVal::TransportCc => f.write_str("transport-cc"),
             RtcpFbVal::Other(other) => f.write_str(other),
         }
     }
@@ -875,6 +1008,12 @@ pub enum RtcpFbPt {
     Fmt(u8),
     /// Applies to all formats
     Wildcard,
+}
+
+impl From<u8> for RtcpFbPt {
+    fn from(pt: u8) -> Self {
+        RtcpFbPt::Fmt(pt)
+    }
 }
 
 /// Candidate connection address type
