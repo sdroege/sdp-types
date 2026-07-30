@@ -5,6 +5,20 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html),
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
+## [Unreleased]
+### Improved
+- Ignore trailing spaces in some fields.
+
+### Added
+- Define specific types for commonly used fields & attributes.
+  E.g.: `RtpMap`, `MediaType`, `Direction`, `TransportProto`, `Ssrc`, ...
+- Allow retrieving parsed typed attributes instead of name / value pairs.
+- Implement constructors.
+- Implement setters for optional fields.
+- Define builders for types which allow optional fields.
+- Add clock-signalling related types.
+- Execute a fuzzing step on CI.
+
 ## [0.1.8] - 2025-03-10
 ### Fixed
 - Ignore extra trailing spaces in time/repeat/timezone fields.
