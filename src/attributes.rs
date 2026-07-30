@@ -1493,7 +1493,7 @@ impl FromStr for SrtpKeyParam {
 
         let key_and_salt = if key_and_salt_with_method
             .get(..7)
-            .map_or(false, |p| p.eq_ignore_ascii_case("inline:"))
+            .is_some_and(|p| p.eq_ignore_ascii_case("inline:"))
         {
             &key_and_salt_with_method[7..]
         } else {
@@ -1724,7 +1724,7 @@ impl FromStr for Crypto {
 
         let mut session_params: Vec<SrtpSessionParam> = Vec::new();
         for s in &mut i {
-            let param = if s.get(..4).map_or(false, |p| p.eq_ignore_ascii_case("KDR=")) {
+            let param = if s.get(..4).is_some_and(|p| p.eq_ignore_ascii_case("KDR=")) {
                 let kdr_val = &s[4..];
                 let Ok(kdr_val) = kdr_val.parse::<u8>() else {
                     return Err(AttributeError::InvalidParamValue {
@@ -1754,7 +1754,7 @@ impl FromStr for Crypto {
                 SrtpSessionParam::UnauthenticatedSrtp
             } else if s
                 .get(..10)
-                .map_or(false, |p| p.eq_ignore_ascii_case("FEC_ORDER="))
+                .is_some_and(|p| p.eq_ignore_ascii_case("FEC_ORDER="))
             {
                 let fec_ord = &s[10..];
                 if fec_ord.eq_ignore_ascii_case("FEC_SRTP") {
@@ -1770,7 +1770,7 @@ impl FromStr for Crypto {
                 }
             } else if s
                 .get(..8)
-                .map_or(false, |p| p.eq_ignore_ascii_case("FEC_KEY="))
+                .is_some_and(|p| p.eq_ignore_ascii_case("FEC_KEY="))
             {
                 let key_params_str = &s[8..];
                 let mut key_params: Vec<SrtpKeyParam> = Vec::new();
@@ -1780,7 +1780,7 @@ impl FromStr for Crypto {
                     key_params.push(key_param);
                 }
                 SrtpSessionParam::FecKey(key_params)
-            } else if s.get(..4).map_or(false, |p| p.eq_ignore_ascii_case("WSH=")) {
+            } else if s.get(..4).is_some_and(|p| p.eq_ignore_ascii_case("WSH=")) {
                 let wsh_val = &s[4..];
                 let Ok(wsh_val) = wsh_val.parse::<u8>() else {
                     return Err(AttributeError::InvalidParamValue {
