@@ -976,9 +976,11 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
                     value: Some(
                         Rtcp {
                             port: 53020,
-                            nettype: NetType::In,
-                            addrtype: AddrType::Ip4,
-                            connection_address: std::net::Ipv4Addr::new(126, 16, 64, 4).to_string(),
+                            nettype: Some(NetType::In),
+                            addrtype: Some(AddrType::Ip4),
+                            connection_address: Some(
+                                std::net::Ipv4Addr::new(126, 16, 64, 4).to_string(),
+                            ),
                         }
                         .to_string(),
                     ),
@@ -1044,11 +1046,11 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
         );
 
         let r = media.attributes_typed::<Rtcp>().collect::<Vec<_>>();
-        assert_eq!(r[0].as_ref().unwrap().addrtype, AddrType::Ip4);
+        assert_eq!(r[0].as_ref().unwrap().addrtype, Some(AddrType::Ip4));
         assert_eq!(r[0].as_ref().unwrap().port, 53020);
 
         let rtcp_attr = media.get_first_attribute_typed::<Rtcp>().unwrap().unwrap();
-        assert_eq!(rtcp_attr.addrtype, AddrType::Ip4);
+        assert_eq!(rtcp_attr.addrtype, Some(AddrType::Ip4));
         assert_eq!(rtcp_attr.port, 53020);
 
         assert_eq!(
