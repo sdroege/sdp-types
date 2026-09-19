@@ -20,21 +20,35 @@ fn format_time<W: std::io::Write + ?Sized>(w: &mut W, t: u64) -> Result<(), std:
     Ok(())
 }
 
+// NUL, CR and LF characters are not allowed inside SDP lines (RFC 8866,
+// section 5). The string fields of the data model are arbitrary strings, so
+// strip those characters when writing to prevent injecting additional lines
+// into the generated session description.
+struct FreeText<'a>(&'a str);
+
+impl std::fmt::Display for FreeText<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for c in self.0.chars().filter(|c| !matches!(c, '\0' | '\r' | '\n')) {
+            std::fmt::Write::write_char(f, c)?;
+        }
+        Ok(())
+    }
+}
+
 impl Origin {
     fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         writeln!(
             w,
             "o={username} {sess_id} {sess_version} {nettype} {addrtype} {unicast_address}\r",
-            username = if let Some(ref username) = self.username {
-                username
-            } else {
-                "-"
+            username = match self.username {
+                Some(ref username) if !username.is_empty() => FreeText(username),
+                _ => FreeText("-"),
             },
-            sess_id = self.sess_id,
+            sess_id = FreeText(&self.sess_id),
             sess_version = self.sess_version,
             nettype = self.nettype,
             addrtype = self.addrtype,
-            unicast_address = self.unicast_address,
+            unicast_address = FreeText(&self.unicast_address),
         )
     }
 }
@@ -46,7 +60,7 @@ impl Connection {
             "c={nettype} {addrtype} {connection_address}\r",
             nettype = self.nettype,
             addrtype = self.addrtype,
-            connection_address = self.connection_address
+            connection_address = FreeText(&self.connection_address)
         )
     }
 }
@@ -56,7 +70,7 @@ impl Bandwidth {
         writeln!(
             w,
             "b={bwtype}:{bw}\r",
-            bwtype = self.bwtype,
+            bwtype = FreeText(&self.bwtype),
             bw = self.bandwidth
         )
     }
@@ -121,11 +135,11 @@ impl Key {
             writeln!(
                 w,
                 "k={method}:{encryption_key}\r",
-                method = self.method,
-                encryption_key = encryption_key
+                method = FreeText(&self.method),
+                encryption_key = FreeText(encryption_key)
             )
         } else {
-            writeln!(w, "k={method}\r", method = self.method)
+            writeln!(w, "k={method}\r", method = FreeText(&self.method))
         }
     }
 }
@@ -136,26 +150,31 @@ impl Attribute {
             writeln!(
                 w,
                 "a={name}:{value}\r",
-                name = self.attribute,
-                value = value
+                name = FreeText(&self.attribute),
+                value = FreeText(value)
             )
         } else {
-            writeln!(w, "a={name}\r", name = self.attribute)
+            writeln!(w, "a={name}\r", name = FreeText(&self.attribute))
         }
     }
 }
 
 impl Media {
     fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
-        write!(w, "m={media} {port}", media = self.media, port = self.port)?;
+        write!(
+            w,
+            "m={media} {port}",
+            media = FreeText(&self.media),
+            port = self.port
+        )?;
 
         if let Some(ref num_ports) = self.num_ports {
             write!(w, "/{num_ports}")?;
         }
-        writeln!(w, " {} {}\r", self.proto, self.fmt)?;
+        writeln!(w, " {} {}\r", FreeText(&self.proto), FreeText(&self.fmt))?;
 
         if let Some(ref media_title) = self.media_title {
-            writeln!(w, "i={media_title}\r")?;
+            writeln!(w, "i={}\r", FreeText(media_title))?;
         }
 
         for connection in &self.connections {
@@ -183,22 +202,22 @@ impl Session {
     pub fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         writeln!(w, "v=0\r")?;
         self.origin.write(w)?;
-        writeln!(w, "s={session_name}\r", session_name = self.session_name)?;
+        writeln!(w, "s={}\r", FreeText(&self.session_name))?;
 
         if let Some(ref session_description) = self.session_description {
-            writeln!(w, "i={session_description}\r")?;
+            writeln!(w, "i={}\r", FreeText(session_description))?;
         }
 
         if let Some(ref uri) = self.uri {
-            writeln!(w, "u={uri}\r")?;
+            writeln!(w, "u={}\r", FreeText(uri))?;
         }
 
         for email in &self.emails {
-            writeln!(w, "e={email}\r")?;
+            writeln!(w, "e={}\r", FreeText(email))?;
         }
 
         for phone in &self.phones {
-            writeln!(w, "p={phone}\r")?;
+            writeln!(w, "p={}\r", FreeText(phone))?;
         }
 
         if let Some(ref connection) = self.connection {
@@ -351,5 +370,83 @@ a=rtpmap:99 h263-1998/90000\r
 ";
 
         assert_eq!(String::from_utf8_lossy(&written), expected);
+    }
+
+    #[test]
+    fn write_sdp_strips_line_breaks() {
+        let sdp = Session {
+            origin: Origin {
+                username: Some("user\r\ns=evil".into()),
+                sess_id: "123\n456".into(),
+                sess_version: 1,
+                nettype: "IN".into(),
+                addrtype: "IP4".into(),
+                unicast_address: "10.0.0.1".into(),
+            },
+            session_name: "test\r\nm=audio 0 RTP/AVP 0".into(),
+            session_description: Some("desc\0x".into()),
+            uri: None,
+            emails: vec![],
+            phones: vec![],
+            connection: Some(Connection {
+                nettype: "IN".into(),
+                addrtype: "IP4".into(),
+                connection_address: "224.0.0.1\r\na=evil".into(),
+            }),
+            bandwidths: vec![Bandwidth {
+                bwtype: "AS".into(),
+                bandwidth: 128,
+            }],
+            times: vec![Time {
+                start_time: 0,
+                stop_time: 0,
+                repeats: vec![],
+            }],
+            time_zones: vec![],
+            key: Some(Key {
+                method: "clear".into(),
+                encryption_key: Some("12\r\n34".into()),
+            }),
+            attributes: vec![Attribute {
+                attribute: "recvonly".into(),
+                value: Some("a\r\nb".into()),
+            }],
+            medias: vec![Media {
+                media: "audio".into(),
+                port: 49170,
+                num_ports: None,
+                proto: "RTP/AVP".into(),
+                fmt: "0".into(),
+                media_title: Some("ti\r\ntle".into()),
+                connections: vec![],
+                bandwidths: vec![],
+                key: None,
+                attributes: vec![],
+            }],
+        };
+
+        let mut written = vec![];
+        sdp.write(&mut written).unwrap();
+
+        let expected = "v=0\r
+o=users=evil 123456 1 IN IP4 10.0.0.1\r
+s=testm=audio 0 RTP/AVP 0\r
+i=descx\r
+c=IN IP4 224.0.0.1a=evil\r
+b=AS:128\r
+t=0 0\r
+k=clear:1234\r
+a=recvonly:ab\r
+m=audio 49170 RTP/AVP 0\r
+i=title\r
+";
+
+        assert_eq!(String::from_utf8_lossy(&written), expected);
+
+        // The output must still parse back into exactly one session with one
+        // media, i.e. no lines were injected.
+        let parsed = Session::parse(&written).unwrap();
+        assert_eq!(parsed.medias.len(), 1);
+        assert_eq!(parsed.session_name, "testm=audio 0 RTP/AVP 0");
     }
 }
