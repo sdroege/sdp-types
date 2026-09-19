@@ -21,6 +21,10 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   the generated session description.
   An empty `username` is now written as `-`, like a missing one, as an
   empty field would not be valid SDP.
+- `crypto` attribute: parse the key lifetime as `u64` instead of `u32` and
+  reject values larger than the maximum of 2^48 (RFC 4568, section 8.1).
+  This is a breaking change: `SrtpKeyParam::lifetime` and the related
+  constructors, setters and builder methods now use `u64`.
 
 ## [0.2.0]
 ### Improved

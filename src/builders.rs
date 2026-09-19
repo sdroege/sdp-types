@@ -1239,19 +1239,19 @@ impl SrtpKeyParam {
         Self(attributes::SrtpKeyParam::new(key_and_salt))
     }
 
-    pub fn lifetime(mut self, lifetime: u32) -> Self {
+    pub fn lifetime(mut self, lifetime: u64) -> Self {
         self.0.set_lifetime(lifetime);
         self
     }
 
-    pub fn lifetime_if(mut self, lifetime: u32, predicate: bool) -> Self {
+    pub fn lifetime_if(mut self, lifetime: u64, predicate: bool) -> Self {
         if predicate {
             self.0.set_lifetime(lifetime);
         }
         self
     }
 
-    pub fn lifetime_if_some(mut self, lifetime: Option<u32>) -> Self {
+    pub fn lifetime_if_some(mut self, lifetime: Option<u64>) -> Self {
         if let Some(lifetime) = lifetime {
             self.0.set_lifetime(lifetime);
         }

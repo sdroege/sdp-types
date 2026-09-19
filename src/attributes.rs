@@ -1467,7 +1467,9 @@ pub struct SrtpKeyParam {
     /// Concatenated key and salt, base64 encoded
     pub key_and_salt: String,
     /// Master key lifetime (max number of SRTP or SRTCP packets using this master key)
-    pub lifetime: Option<u32>,
+    ///
+    /// The value must not exceed 2^48 (RFC 4568, section 8.1).
+    pub lifetime: Option<u64>,
     /// MKI (Master Key Identifier) and length of the MKI field in SRTP packets
     pub mki_and_length: Option<(u32, u32)>,
 }
@@ -1481,7 +1483,7 @@ impl SrtpKeyParam {
         }
     }
 
-    pub fn with_lifetime(key_and_salt: impl ToString, lifetime: u32) -> Self {
+    pub fn with_lifetime(key_and_salt: impl ToString, lifetime: u64) -> Self {
         SrtpKeyParam {
             key_and_salt: key_and_salt.to_string(),
             lifetime: Some(lifetime),
@@ -1491,7 +1493,7 @@ impl SrtpKeyParam {
 
     pub fn with_lifetime_and_mki_and_length(
         key_and_salt: impl ToString,
-        lifetime: u32,
+        lifetime: u64,
         mki: u32,
         length: u32,
     ) -> Self {
@@ -1502,7 +1504,7 @@ impl SrtpKeyParam {
         }
     }
 
-    pub fn set_lifetime(&mut self, lifetime: u32) {
+    pub fn set_lifetime(&mut self, lifetime: u64) {
         self.lifetime = Some(lifetime);
     }
 
@@ -1559,6 +1561,9 @@ impl FromStr for SrtpKeyParam {
                 }
                 None => {
                     // lifetime is specified
+                    // The maximum master key lifetime is 2^48 packets for all
+                    // crypto suites (RFC 4568, section 8.1).
+                    const MAX_LIFETIME: u64 = 1 << 48;
                     let lifetime = match next_param.strip_prefix("2^") {
                         Some(exp) => {
                             let Ok(exp) = exp.parse::<u32>() else {
@@ -1568,24 +1573,37 @@ impl FromStr for SrtpKeyParam {
                                     attr: Crypto::NAME.to_string(),
                                 });
                             };
-                            // 2u32.pow(exp) panics for exp >= 32
-                            if exp >= 32 {
-                                return Err(AttributeError::InvalidParamValue {
-                                    param: "Lifetime".to_string(),
-                                    val: format!("{exp}(expected 0-32)"),
-                                    attr: Crypto::NAME.to_string(),
-                                });
-                            }
-                            Some(2u32.pow(exp))
-                        }
-                        None => {
-                            let Ok(lifetime) = next_param.parse::<u32>() else {
+                            let Some(lifetime) = 1u64.checked_shl(exp) else {
                                 return Err(AttributeError::InvalidParamValue {
                                     param: "Lifetime".to_string(),
                                     val: next_param.to_string(),
                                     attr: Crypto::NAME.to_string(),
                                 });
                             };
+                            if lifetime == 0 || lifetime > MAX_LIFETIME {
+                                return Err(AttributeError::InvalidParamValue {
+                                    param: "Lifetime".to_string(),
+                                    val: next_param.to_string(),
+                                    attr: Crypto::NAME.to_string(),
+                                });
+                            }
+                            Some(lifetime)
+                        }
+                        None => {
+                            let Ok(lifetime) = next_param.parse::<u64>() else {
+                                return Err(AttributeError::InvalidParamValue {
+                                    param: "Lifetime".to_string(),
+                                    val: next_param.to_string(),
+                                    attr: Crypto::NAME.to_string(),
+                                });
+                            };
+                            if lifetime == 0 || lifetime > MAX_LIFETIME {
+                                return Err(AttributeError::InvalidParamValue {
+                                    param: "Lifetime".to_string(),
+                                    val: next_param.to_string(),
+                                    attr: Crypto::NAME.to_string(),
+                                });
+                            }
                             Some(lifetime)
                         }
                     };
@@ -2457,6 +2475,33 @@ a=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:YUJDZGVmZ2hpSktMbW9QUXJzVHVWd3l6MTIzND
             crypto.to_string(),
             "1 AES_CM_128_HMAC_SHA1_80 inline:WVNfX19zZW1jdGwgKCkgewkyMjA7fQp9CnVubGVz|2^20|1:4;inline:WVNfX19zZW1jdGwgKCkgewkyMjA7fQp9CnVubGVz|2^20|1:4 FEC_ORDER=SRTP_FEC"
         );
+    }
+
+    #[test]
+    fn parse_srtp_key_param_lifetime() {
+        // RFC 4568 allows lifetimes up to 2^48, which doesn't fit into u32.
+        let param = SrtpKeyParam::from_str("inline:YWJj|2^48").unwrap();
+        assert_eq!(param.lifetime, Some(1 << 48));
+        assert_eq!(param.to_string(), "inline:YWJj|2^48");
+
+        let param = SrtpKeyParam::from_str("inline:YWJj|1000000000000").unwrap();
+        assert_eq!(param.lifetime, Some(1_000_000_000_000));
+        assert_eq!(param.to_string(), "inline:YWJj|1000000000000");
+
+        for invalid in [
+            // larger than the maximum of 2^48
+            "inline:YWJj|2^49",
+            "inline:YWJj|2^100",
+            "inline:YWJj|281474976710657",
+            // zero is not a positive integer
+            "inline:YWJj|0",
+        ] {
+            assert!(
+                SrtpKeyParam::from_str(invalid).is_err(),
+                "{} should be invalid",
+                invalid
+            );
+        }
     }
 
     #[test]
