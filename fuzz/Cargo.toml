@@ -24,3 +24,9 @@ name = "parse_session"
 path = "fuzz_targets/parse_session.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "parse_typed_attributes"
+path = "fuzz_targets/parse_typed_attributes.rs"
+test = false
+doc = false
