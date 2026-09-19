@@ -29,6 +29,10 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   which RFC 4568 (section 8.1) does not allow.
 - `mediaclk` attribute: reject a rate with a zero denominator, e.g.
   `direct rate=1000/0`.
+- `ts-refclk` attribute: accept bare IPv6 NTP server addresses (e.g.
+  `ntp=::1`), which were previously mistaken for a host:port split.
+  Bracketed addresses (`ntp=[::1]:123`) now store the bare address in
+  `NtpServerAddr::HostPort::hostname` and get re-bracketed on display.
 
 ## [0.2.0]
 ### Improved

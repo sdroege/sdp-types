@@ -1,4 +1,5 @@
 use std::fmt;
+use std::net::IpAddr;
 use std::str::FromStr;
 
 use crate::attributes::{AttributeError, ErrorContext, TypedAttribute};
@@ -277,6 +278,34 @@ impl FromStr for NtpServerAddr {
 
         if s == "/traceable/" {
             Ok(Self::Traceable)
+        } else if s.parse::<IpAddr>().is_ok() {
+            // A bare IP address, in particular an IPv6 address which must not
+            // be mistaken for a host:port split.
+            Ok(Self::HostPort {
+                hostname: s.to_string(),
+                port: None,
+            })
+        } else if let Some(rest) = s.strip_prefix('[') {
+            // Bracketed IPv6 address, with or without port.
+            let invalid = || AttributeError::InvalidParamValue {
+                param: "NTP server address".to_string(),
+                val: s.to_string(),
+                attr: String::new(), // will be set bubbling up
+            };
+            let (address, port) = match rest.split_once("]:") {
+                Some((address, port_str)) => {
+                    let port = port_str.parse::<u16>().map_err(|_| invalid())?;
+                    (address, Some(port))
+                }
+                None => (rest.strip_suffix(']').ok_or_else(invalid)?, None),
+            };
+            if address.parse::<IpAddr>().is_err() {
+                return Err(invalid());
+            }
+            Ok(Self::HostPort {
+                hostname: address.to_string(),
+                port,
+            })
         } else if let Some((hostname, port_str)) = s.rsplit_once(':') {
             if hostname.is_empty() {
                 return Err(AttributeError::ParamNotFound {
@@ -312,7 +341,15 @@ impl fmt::Display for NtpServerAddr {
             Self::HostPort {
                 hostname,
                 port: Some(port),
-            } => write!(f, "{hostname}:{port}"),
+            } => {
+                // Bracket IPv6 addresses so the address and port stay
+                // distinguishable.
+                if hostname.contains(':') {
+                    write!(f, "[{hostname}]:{port}")
+                } else {
+                    write!(f, "{hostname}:{port}")
+                }
+            }
             Self::HostPort {
                 hostname,
                 port: None,
@@ -1402,8 +1439,26 @@ mod tests {
                 "ntp=[::1]:123",
                 ReferenceClock::Ntp(Ntp {
                     server: NtpServerAddr::HostPort {
-                        hostname: "[::1]".to_string(),
+                        hostname: "::1".to_string(),
                         port: Some(123),
+                    },
+                }),
+            ),
+            (
+                "ntp=::1",
+                ReferenceClock::Ntp(Ntp {
+                    server: NtpServerAddr::HostPort {
+                        hostname: "::1".to_string(),
+                        port: None,
+                    },
+                }),
+            ),
+            (
+                "ntp=2001:db8::1",
+                ReferenceClock::Ntp(Ntp {
+                    server: NtpServerAddr::HostPort {
+                        hostname: "2001:db8::1".to_string(),
+                        port: None,
                     },
                 }),
             ),
@@ -1550,6 +1605,31 @@ mod tests {
         for (input, expected_err) in invalid_cases {
             println!("Testing invalid: {input}");
             assert_eq!(input.parse::<ReferenceClock>(), Err(expected_err));
+        }
+    }
+
+    #[test]
+    fn ntp_server_addr_ipv6() {
+        // Bracketed IPv6 without a port parses; Display omits the brackets
+        // (RFC 5954 only requires them together with a port).
+        let clock = "ntp=[2001:db8::1]".parse::<ReferenceClock>().unwrap();
+        assert_eq!(
+            clock,
+            ReferenceClock::Ntp(Ntp {
+                server: NtpServerAddr::HostPort {
+                    hostname: "2001:db8::1".to_string(),
+                    port: None,
+                }
+            })
+        );
+        assert_eq!(clock.to_string(), "ntp=2001:db8::1");
+
+        for invalid in ["ntp=[foo]", "ntp=[::1", "ntp=[:]", "ntp=[::1]:notaport"] {
+            assert!(
+                invalid.parse::<ReferenceClock>().is_err(),
+                "{} should be invalid",
+                invalid
+            );
         }
     }
 
