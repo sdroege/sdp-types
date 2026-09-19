@@ -5,6 +5,16 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html),
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
+## [Unreleased]
+### Fixed
+- Don't silently skip malformed lines in the parser, propagate the error.
+- `mediaclk` attribute: don't panic when an `id=` value has no clock source.
+- `rtcp` attribute: accept the optional address part (RFC 3605).
+  `Rtcp`'s `nettype`, `addrtype` and `connection_address` are now optional,
+  and `try_parse_connection_ip_address()` returns an `Option`.
+  Runs of spaces are treated as a single separator, like in `o=` and `c=`
+  lines, and empty fields are no longer accepted.
+
 ## [0.2.0]
 ### Improved
 - Ignore trailing spaces in some fields.

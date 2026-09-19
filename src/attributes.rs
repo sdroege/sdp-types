@@ -386,6 +386,9 @@ impl TypedAttribute for Fmtp {
 /// To be used if not algorithmically derived
 /// from the RTP port described in the media line
 ///
+/// The address part is optional: when absent, RTCP is sent to the
+/// connection address given for the media.
+///
 /// See [RFC 3605 Section 2.1](https://datatracker.ietf.org/doc/html/rfc3605#section-2.1)
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -393,29 +396,48 @@ pub struct Rtcp {
     /// Port used for the RTCP stream
     pub port: u16,
     /// Network Type
-    pub nettype: NetType,
+    ///
+    /// `None` if the address part is absent
+    pub nettype: Option<NetType>,
     /// Address type
-    pub addrtype: AddrType,
+    ///
+    /// `None` if the address part is absent
+    pub addrtype: Option<AddrType>,
     /// Connection address: can be IP Address, unicast, multicast, ...
     /// Conformity may be checked against the `addrtype`.
-    pub connection_address: String,
+    ///
+    /// `None` if the address part is absent
+    pub connection_address: Option<String>,
 }
 
 impl Rtcp {
+    /// Construct an [`Rtcp`] with only a port number, i.e. without an address
+    /// part.
+    ///
+    /// RTCP is then sent to the connection address given for the media.
+    pub fn with_port(port: u16) -> Self {
+        Rtcp {
+            port,
+            nettype: None,
+            addrtype: None,
+            connection_address: None,
+        }
+    }
+
     /// Construct an [`Rtcp`] with the specified IP `connection_address`
     pub fn with_ip_addr(port: u16, connection_address: impl Into<IpAddr>) -> Self {
         let connection_address = connection_address.into();
         Rtcp {
             port,
-            nettype: NetType::In,
-            addrtype: connection_address.into(),
-            connection_address: connection_address.to_string(),
+            nettype: Some(NetType::In),
+            addrtype: Some(connection_address.into()),
+            connection_address: Some(connection_address.to_string()),
         }
     }
 
     /// Construct an [`Rtcp`]
     ///
-    /// See also [`Rtcp::with_ip_addr`]
+    /// See also [`Rtcp::with_ip_addr`] and [`Rtcp::with_port`]
     pub fn new(
         port: u16,
         nettype: NetType,
@@ -424,27 +446,30 @@ impl Rtcp {
     ) -> Self {
         Rtcp {
             port,
-            nettype,
-            addrtype,
-            connection_address: connection_address.to_string(),
+            nettype: Some(nettype),
+            addrtype: Some(addrtype),
+            connection_address: Some(connection_address.to_string()),
         }
     }
 
     /// Tries to parse the `connection_address` `String` of `self` as `IpAddr`
     ///
-    /// Returns the `Ok` with the parsed `IpAddr` or `Err` with the string address
-    /// if parsing failed.
-    pub fn try_parse_connection_ip_address(&self) -> Result<IpAddr, &str> {
+    /// Returns `None` if the address part is absent, the `Ok` with the parsed
+    /// `IpAddr` or `Err` with the string address if parsing failed.
+    pub fn try_parse_connection_ip_address(&self) -> Option<Result<IpAddr, &str>> {
         self.connection_address
-            .parse::<IpAddr>()
-            .map_err(|_| self.connection_address.as_str())
+            .as_deref()
+            .map(|address| address.parse::<IpAddr>().map_err(|_| address))
     }
 
     /// Sets the `connection_address` & `addrtype` of `self` from the specified `IpAddr`
+    ///
+    /// Also sets the `nettype` to `IN` if it is not set yet.
     pub fn set_connection_ip_address(&mut self, connection_address: impl Into<IpAddr>) {
         let connection_address = connection_address.into();
-        self.addrtype = connection_address.into();
-        self.connection_address = connection_address.to_string();
+        self.nettype.get_or_insert(NetType::In);
+        self.addrtype = Some(connection_address.into());
+        self.connection_address = Some(connection_address.to_string());
     }
 }
 
@@ -452,7 +477,9 @@ impl FromStr for Rtcp {
     type Err = AttributeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut i = s.split(' ');
+        // Runs of spaces are a single separator, like in o= and c= lines,
+        // so that no field can end up empty.
+        let mut i = s.split(' ').filter(|part| !part.is_empty());
         let Some(port) = i.next() else {
             return Err(AttributeError::ParamNotFound {
                 param: "Port".to_string(),
@@ -468,11 +495,10 @@ impl FromStr for Rtcp {
             });
         };
 
+        // The address part is optional (RFC 3605): if the port is the only
+        // field, RTCP is sent to the media's connection address.
         let Some(nettype) = i.next() else {
-            return Err(AttributeError::ParamNotFound {
-                param: "Network type".to_string(),
-                attr: <Self as TypedAttribute>::NAME.to_string(),
-            });
+            return Ok(Self::with_port(port));
         };
 
         let Ok(nettype) = NetType::from_str(nettype) else {
@@ -514,20 +540,26 @@ impl FromStr for Rtcp {
 
         Ok(Self {
             port,
-            nettype,
-            addrtype,
-            connection_address: connection_address.to_string(),
+            nettype: Some(nettype),
+            addrtype: Some(addrtype),
+            connection_address: Some(connection_address.to_string()),
         })
     }
 }
 
 impl Display for Rtcp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {} {} {}",
-            self.port, self.nettype, self.addrtype, self.connection_address
-        )
+        write!(f, "{}", self.port)?;
+        if let Some(nettype) = &self.nettype {
+            write!(f, " {nettype}")?;
+        }
+        if let Some(addrtype) = &self.addrtype {
+            write!(f, " {addrtype}")?;
+        }
+        if let Some(connection_address) = &self.connection_address {
+            write!(f, " {connection_address}")?;
+        }
+        Ok(())
     }
 }
 
@@ -2588,9 +2620,8 @@ a=candidate:7 1 UDP 10 192.168.1.1 49157 typ unknown_type\r
         // Test Rtcp error paths
         assert_eq!(
             "".parse::<Rtcp>().unwrap_err(),
-            AttributeError::InvalidParamValue {
+            AttributeError::ParamNotFound {
                 param: "Port".to_string(),
-                val: "".to_string(),
                 attr: "rtcp".to_string()
             }
         );
@@ -2773,44 +2804,74 @@ a=rtcp:5000 IN IP4 127.0.0.1\r
 a=rtcp:5000 IN IP4 127.0.0.0/24\r
 a=rtcp:5000 IN IP6 ::1\r
 a=rtcp:5000 IN NONIP non-IP\r
+a=rtcp:53020\r
 ";
 
         let parsed = Session::parse(sdp.as_bytes()).unwrap();
         let mut rtcp_attr_iter = parsed.attributes_typed::<Rtcp>();
 
         let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
-        assert_eq!(rtcp.addrtype, AddrType::Ip4);
-        assert_eq!(&rtcp.connection_address, "127.0.0.1");
+        assert_eq!(rtcp.addrtype, Some(AddrType::Ip4));
+        assert_eq!(rtcp.connection_address.as_deref(), Some("127.0.0.1"));
         assert_eq!(
-            rtcp.try_parse_connection_ip_address().unwrap(),
+            rtcp.try_parse_connection_ip_address().unwrap().unwrap(),
             IpAddr::V4(Ipv4Addr::LOCALHOST),
         );
 
         let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
-        assert_eq!(rtcp.addrtype, AddrType::Ip4);
-        assert_eq!(&rtcp.connection_address, "127.0.0.0/24");
+        assert_eq!(rtcp.addrtype, Some(AddrType::Ip4));
+        assert_eq!(rtcp.connection_address.as_deref(), Some("127.0.0.0/24"));
         assert_eq!(
             &rtcp
                 .try_parse_connection_ip_address()
+                .unwrap()
                 .expect_err("IPv4 with mask")
                 .to_string(),
             "127.0.0.0/24"
         );
 
         let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
-        assert_eq!(rtcp.addrtype, AddrType::Ip6);
-        assert_eq!(&rtcp.connection_address, "::1");
+        assert_eq!(rtcp.addrtype, Some(AddrType::Ip6));
+        assert_eq!(rtcp.connection_address.as_deref(), Some("::1"));
         assert_eq!(
-            rtcp.try_parse_connection_ip_address().unwrap(),
+            rtcp.try_parse_connection_ip_address().unwrap().unwrap(),
             IpAddr::V6(Ipv6Addr::LOCALHOST),
         );
 
         let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
-        assert_eq!(rtcp.addrtype, AddrType::Other("NONIP".to_string()));
-        assert_eq!(&rtcp.connection_address, "non-IP");
+        assert_eq!(rtcp.addrtype, Some(AddrType::Other("NONIP".to_string())));
+        assert_eq!(rtcp.connection_address.as_deref(), Some("non-IP"));
         assert_eq!(
-            rtcp.try_parse_connection_ip_address().unwrap_err(),
+            rtcp.try_parse_connection_ip_address().unwrap().unwrap_err(),
             "non-IP",
         );
+
+        // RFC 3605: the address part is optional.
+        let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
+        assert_eq!(rtcp.port, 53020);
+        assert_eq!(rtcp.nettype, None);
+        assert_eq!(rtcp.addrtype, None);
+        assert_eq!(rtcp.connection_address, None);
+        assert_eq!(rtcp.try_parse_connection_ip_address(), None);
+        assert_eq!(rtcp.to_string(), "53020");
+    }
+
+    #[test]
+    fn parse_rtcp_attribute_whitespace() {
+        // Runs of spaces are a single separator, like in o= and c= lines,
+        // and empty fields are rejected instead of ending up as e.g. an
+        // empty `nettype` or `addrtype`.
+        assert_eq!(
+            "6000  IN IP4 127.0.0.1".parse::<Rtcp>().unwrap(),
+            Rtcp::new(6000, NetType::In, AddrType::Ip4, "127.0.0.1")
+        );
+        assert_eq!(
+            "6001 IN  IP4 127.0.0.1 ".parse::<Rtcp>().unwrap(),
+            Rtcp::new(6001, NetType::In, AddrType::Ip4, "127.0.0.1")
+        );
+        assert_eq!("53020 ".parse::<Rtcp>().unwrap(), Rtcp::with_port(53020));
+
+        assert!("6002 IN  127.0.0.1".parse::<Rtcp>().is_err());
+        assert!("6003 IN IP4 127.0.0.1 extra".parse::<Rtcp>().is_err());
     }
 }
