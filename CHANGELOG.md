@@ -9,6 +9,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ### Fixed
 - Don't silently skip malformed lines in the parser, propagate the error.
 - `mediaclk` attribute: don't panic when an `id=` value has no clock source.
+- `mediaclk` attribute: reject garbage appended to the `direct` clock token
+  instead of silently dropping it.
 - `rtcp` attribute: accept the optional address part (RFC 3605).
   `Rtcp`'s `nettype`, `addrtype` and `connection_address` are now optional,
   and `try_parse_connection_ip_address()` returns an `Option`.
