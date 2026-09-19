@@ -25,6 +25,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   reject values larger than the maximum of 2^48 (RFC 4568, section 8.1).
   This is a breaking change: `SrtpKeyParam::lifetime` and the related
   constructors, setters and builder methods now use `u64`.
+- `crypto` attribute: reject key lifetimes with leading zeroes or a sign,
+  which RFC 4568 (section 8.1) does not allow.
 
 ## [0.2.0]
 ### Improved

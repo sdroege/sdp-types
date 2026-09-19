@@ -5,6 +5,7 @@
 //! Contains all the Session description Attributes defined as Structs/Enums
 
 use std::{
+    convert::TryFrom,
     fmt::{Display, Write},
     net::IpAddr,
     str::FromStr,
@@ -1513,6 +1514,19 @@ impl SrtpKeyParam {
     }
 }
 
+// Parse a plain decimal integer as used in the crypto attribute: digits
+// only, no sign and no leading zeroes, except for the value 0 itself
+// (RFC 4568, section 8.1).
+fn parse_decimal_no_leading_zeroes(s: &str) -> Option<u64> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    if s.len() > 1 && s.starts_with('0') {
+        return None;
+    }
+    s.parse().ok()
+}
+
 impl FromStr for SrtpKeyParam {
     type Err = AttributeError;
     fn from_str(key_param: &str) -> Result<Self, Self::Err> {
@@ -1566,7 +1580,9 @@ impl FromStr for SrtpKeyParam {
                     const MAX_LIFETIME: u64 = 1 << 48;
                     let lifetime = match next_param.strip_prefix("2^") {
                         Some(exp) => {
-                            let Ok(exp) = exp.parse::<u32>() else {
+                            let Some(exp) = parse_decimal_no_leading_zeroes(exp)
+                                .and_then(|exp| u32::try_from(exp).ok())
+                            else {
                                 return Err(AttributeError::InvalidParamValue {
                                     param: "Lifetime".to_string(),
                                     val: next_param.to_string(),
@@ -1590,7 +1606,7 @@ impl FromStr for SrtpKeyParam {
                             Some(lifetime)
                         }
                         None => {
-                            let Ok(lifetime) = next_param.parse::<u64>() else {
+                            let Some(lifetime) = parse_decimal_no_leading_zeroes(next_param) else {
                                 return Err(AttributeError::InvalidParamValue {
                                     param: "Lifetime".to_string(),
                                     val: next_param.to_string(),
@@ -2495,6 +2511,12 @@ a=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:YUJDZGVmZ2hpSktMbW9QUXJzVHVWd3l6MTIzND
             "inline:YWJj|281474976710657",
             // zero is not a positive integer
             "inline:YWJj|0",
+            // leading zeroes and signs are not allowed
+            "inline:YWJj|007",
+            "inline:YWJj|0123",
+            "inline:YWJj|2^007",
+            "inline:YWJj|+1048576",
+            "inline:YWJj|2^+20",
         ] {
             assert!(
                 SrtpKeyParam::from_str(invalid).is_err(),
