@@ -917,7 +917,13 @@ impl FromStr for MediaClockSource {
     fn from_str(mut s: &str) -> Result<Self, AttributeError> {
         let mut id = None;
         if let Some(id_str) = s.strip_prefix("id=") {
-            let (id_str, rest) = id_str.split_once(' ').unwrap();
+            let (id_str, rest) =
+                id_str
+                    .split_once(' ')
+                    .ok_or_else(|| AttributeError::ParamNotFound {
+                        param: "media clock source".to_string(),
+                        attr: <Self as TypedAttribute>::NAME.to_string(),
+                    })?;
             id = Some(MediaClockId::from_str(id_str).with_attr(<Self as TypedAttribute>::NAME)?);
 
             s = rest;
@@ -1670,6 +1676,13 @@ mod tests {
                 "id= sender",
                 AttributeError::ParamNotFound {
                     param: "media clock tag".to_string(),
+                    attr: "mediaclk".to_string(),
+                },
+            ),
+            (
+                "id=tag",
+                AttributeError::ParamNotFound {
+                    param: "media clock source".to_string(),
                     attr: "mediaclk".to_string(),
                 },
             ),
