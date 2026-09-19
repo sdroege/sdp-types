@@ -148,8 +148,8 @@ impl Connection {
             parse_str(&mut connection, line.n, "Connection connection-address")?;
 
         Ok(Connection {
-            nettype: NetType::from_str(&nettype).expect("infaillible"),
-            addrtype: AddrType::from_str(&addrtype).expect("infaillible"),
+            nettype: NetType::from_str(&nettype).expect("infallible"),
+            addrtype: AddrType::from_str(&addrtype).expect("infallible"),
             connection_address,
         })
     }

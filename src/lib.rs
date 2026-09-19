@@ -569,7 +569,7 @@ impl Media {
 
     /// Gets the first value of the given attribute.
     ///
-    /// The outter `Option` reflects the availability of the attribute.
+    /// The outer `Option` reflects the availability of the attribute.
     /// The inner `Option` reflects the optional value of the attribute.
     pub fn get_first_attribute_value<'a>(&'a self, name: &'a str) -> Option<Option<&'a str>> {
         self.get_attribute_values(name).next()
@@ -613,7 +613,7 @@ impl Media {
         self.attributes_typed().next()
     }
 
-    /// Gets an iterator over all attribute values of the given name.
+    /// Gets an iterator over all attributes parsed as the typed attribute `T`.
     ///
     /// Each item represents the attribute parsing `Result`.
     ///
@@ -793,7 +793,7 @@ impl Session {
 
     /// Gets the first value of the given attribute.
     ///
-    /// The outter `Option` reflects the availability of the attribute.
+    /// The outer `Option` reflects the availability of the attribute.
     /// The inner `Option` reflects the optional value of the attribute.
     pub fn get_first_attribute_value<'a>(&'a self, name: &'a str) -> Option<Option<&'a str>> {
         self.get_attribute_values(name).next()
@@ -817,7 +817,7 @@ impl Session {
         self.attributes_typed().next()
     }
 
-    /// Gets an iterator over all attribute values of the given name.
+    /// Gets an iterator over all attributes parsed as the typed attribute `T`.
     ///
     /// Each item represents the attribute parsing `Result`.
     ///
