@@ -16,6 +16,11 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   and `try_parse_connection_ip_address()` returns an `Option`.
   Runs of spaces are treated as a single separator, like in `o=` and `c=`
   lines, and empty fields are no longer accepted.
+- Writer: strip NUL, CR and LF characters from string fields (RFC 8866,
+  section 5). Previously they could be used to inject additional lines into
+  the generated session description.
+  An empty `username` is now written as `-`, like a missing one, as an
+  empty field would not be valid SDP.
 
 ## [0.2.0]
 ### Improved
