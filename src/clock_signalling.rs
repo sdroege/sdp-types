@@ -1275,6 +1275,13 @@ impl FromStr for Direct {
                         val: den_str.to_string(),
                         attr: String::new(), // will be set bubbling up
                     })?;
+            if denominator == 0 {
+                return Err(AttributeError::InvalidParamValue {
+                    param: "rate denominator".to_string(),
+                    val: den_str.to_string(),
+                    attr: String::new(), // will be set bubbling up
+                });
+            }
 
             Some(Rate {
                 numerator,
@@ -1680,6 +1687,14 @@ mod tests {
                 AttributeError::InvalidParamValue {
                     param: "direct (direct clock parameters)".to_string(),
                     val: "foo".to_string(),
+                    attr: "mediaclk".to_string(),
+                },
+            ),
+            (
+                "direct rate=1000/0",
+                AttributeError::InvalidParamValue {
+                    param: "direct (rate denominator)".to_string(),
+                    val: "0".to_string(),
                     attr: "mediaclk".to_string(),
                 },
             ),
