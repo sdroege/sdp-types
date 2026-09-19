@@ -119,7 +119,8 @@ impl TimeZone {
             write!(w, "{} ", zone.adjustment_time)?;
             if zone.offset < 0 {
                 write!(w, "-")?;
-                format_time(w, (-zone.offset) as u64)?;
+                // unsigned_abs to avoid overflow for i64::MIN
+                format_time(w, zone.offset.unsigned_abs())?;
             } else {
                 format_time(w, zone.offset as u64)?;
             }
@@ -448,5 +449,46 @@ i=title\r
         let parsed = Session::parse(&written).unwrap();
         assert_eq!(parsed.medias.len(), 1);
         assert_eq!(parsed.session_name, "testm=audio 0 RTP/AVP 0");
+    }
+
+    #[test]
+    fn write_time_zone_min_offset() {
+        // Negating i64::MIN overflows, so it must not be written via `-offset`.
+        let sdp = Session {
+            origin: Origin {
+                username: None,
+                sess_id: "0".into(),
+                sess_version: 0,
+                nettype: "IN".into(),
+                addrtype: "IP4".into(),
+                unicast_address: "0.0.0.0".into(),
+            },
+            session_name: "-".into(),
+            session_description: None,
+            uri: None,
+            emails: vec![],
+            phones: vec![],
+            connection: None,
+            bandwidths: vec![],
+            times: vec![],
+            time_zones: vec![TimeZone {
+                adjustment_time: 2882844526,
+                offset: i64::MIN,
+            }],
+            key: None,
+            attributes: vec![],
+            medias: vec![],
+        };
+
+        let mut written = vec![];
+        sdp.write(&mut written).unwrap();
+
+        let expected = "v=0\r
+o=- 0 0 IN IP4 0.0.0.0\r
+s=-\r
+t=0 0\r
+z=2882844526 -9223372036854775808\r
+";
+        assert_eq!(String::from_utf8_lossy(&written), expected);
     }
 }
