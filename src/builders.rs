@@ -65,7 +65,7 @@ impl Origin {
     }
 }
 
-/// A [`crate::Origin`] builder.
+/// A [`crate::Time`] builder.
 #[derive(Debug)]
 pub struct Time(crate::Time);
 impl Time {
