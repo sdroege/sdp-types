@@ -1236,8 +1236,16 @@ impl FromStr for Direct {
                     })?;
 
             (Some(offset), s)
+        } else if let Some(s) = s.strip_prefix(' ') {
+            (None, s)
         } else {
-            (None, s.strip_prefix(' ').unwrap_or(""))
+            // Anything not separated from the "direct" token by a space is
+            // invalid, e.g. "directfoo".
+            return Err(AttributeError::InvalidParamValue {
+                param: "direct clock parameters".to_string(),
+                val: s.to_string(),
+                attr: String::new(), // will be set bubbling up
+            });
         };
 
         let rate = if s.is_empty() {
@@ -1661,6 +1669,17 @@ mod tests {
                 AttributeError::InvalidParamValue {
                     param: "direct (offset)".to_string(),
                     val: "count".to_string(),
+                    attr: "mediaclk".to_string(),
+                },
+            ),
+            (
+                // Garbage appended directly to the "direct" token (no
+                // separating space) must be rejected instead of silently
+                // producing an empty Direct clock.
+                "directfoo",
+                AttributeError::InvalidParamValue {
+                    param: "direct (direct clock parameters)".to_string(),
+                    val: "foo".to_string(),
                     attr: "mediaclk".to_string(),
                 },
             ),
