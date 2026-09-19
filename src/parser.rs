@@ -382,8 +382,11 @@ impl Media {
         let mut bandwidths = vec![];
         let mut key = None;
         let mut attributes = vec![];
-        while matches!(lines.peek(), Ok(Some(Line { key, .. })) if *key != b'm') {
-            let line = lines.next().unwrap().unwrap();
+        while let Some(line_key) = peek_key(lines)? {
+            if line_key == b'm' {
+                break;
+            }
+            let line = lines.next()?.unwrap();
 
             match line.key {
                 // Parse media information line
@@ -472,8 +475,11 @@ impl Session {
         let mut time_zones = None;
         let mut attributes = vec![];
         let mut key = None;
-        while matches!(lines.peek(), Ok(Some(Line { key, .. })) if *key != b'm') {
-            let line = lines.next().unwrap().unwrap();
+        while let Some(line_key) = peek_key(&mut lines)? {
+            if line_key == b'm' {
+                break;
+            }
+            let line = lines.next()?.unwrap();
             match line.key {
                 // Parse origin line:
                 // - Must only exist once or not at all
@@ -684,6 +690,22 @@ struct Line<'item> {
     value: &'item [u8],
 }
 
+// Returns the key of the next line without consuming it, or `None` at the
+// end of input.
+//
+// `Peekable::peek()` does not cache errors: an `Err` return has already
+// advanced the underlying iterator, so the error would be lost unless it is
+// propagated here.
+fn peek_key<'item, I: FallibleIterator<Item = Line<'item>, Error = ParserError>>(
+    lines: &mut fallible_iterator::Peekable<I>,
+) -> Result<Option<u8>, ParserError> {
+    match lines.peek() {
+        Ok(Some(line)) => Ok(Some(line.key)),
+        Ok(None) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
 // Parsing helper iterators below
 struct LineParser<'item, I: Iterator<Item = (usize, &'item [u8])>>(I);
 
@@ -725,6 +747,36 @@ impl<'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator for LineP
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn malformed_line_error_not_swallowed() {
+        // A malformed line in the session section must error, not be skipped.
+        let sdp = b"v=0\r
+s=x\r
+broken\r
+t=0 0\r
+";
+        assert!(matches!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::InvalidLineFormat(
+                3,
+                "Line not in key=value format"
+            ))
+        ));
+
+        // Same for a malformed line in a media section, before the next 'm='.
+        let sdp = b"v=0\r
+m=audio 49170 RTP/AVP 0\r
+broken\r
+";
+        assert!(matches!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::InvalidLineFormat(
+                3,
+                "Line not in key=value format"
+            ))
+        ));
+    }
 
     #[test]
     fn parse_sdp() {
