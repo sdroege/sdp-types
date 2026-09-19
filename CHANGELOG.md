@@ -27,6 +27,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   constructors, setters and builder methods now use `u64`.
 - `crypto` attribute: reject key lifetimes with leading zeroes or a sign,
   which RFC 4568 (section 8.1) does not allow.
+- `mediaclk` attribute: reject a rate with a zero denominator, e.g.
+  `direct rate=1000/0`.
 
 ## [0.2.0]
 ### Improved
