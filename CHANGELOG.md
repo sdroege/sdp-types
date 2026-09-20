@@ -44,6 +44,10 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   field. Previously extra spaces could shift or corrupt the parsed fields.
   This is a breaking change: session descriptions with extra fields in
   `o=` or `c=` lines now fail to parse with `ParserError::FieldTrailingData`.
+- `has_attribute()` and `get_attribute_values()` now match the attribute
+  name case-insensitively on both `Session` and `Media`, like
+  `attributes_typed()` already did. The stored attribute names keep their
+  original case.
 
 ## [0.2.0]
 ### Improved

@@ -563,8 +563,12 @@ impl Media {
     }
 
     /// Checks if the given attribute exists.
+    ///
+    /// The attribute name is matched case-insensitively.
     pub fn has_attribute(&self, name: &str) -> bool {
-        self.attributes.iter().any(|a| a.attribute == name)
+        self.attributes
+            .iter()
+            .any(|a| a.attribute.eq_ignore_ascii_case(name))
     }
 
     /// Gets the first value of the given attribute.
@@ -576,13 +580,15 @@ impl Media {
     }
 
     /// Gets an iterator over all attribute values of the given name.
+    ///
+    /// The attribute name is matched case-insensitively.
     pub fn get_attribute_values<'a>(
         &'a self,
         name: &'a str,
     ) -> impl Iterator<Item = Option<&'a str>> {
         self.attributes
             .iter()
-            .filter(move |a| a.attribute == name)
+            .filter(move |a| a.attribute.eq_ignore_ascii_case(name))
             .map(|a| a.value.as_deref())
     }
 
@@ -787,8 +793,12 @@ impl Session {
     }
 
     /// Checks if the given attribute exists.
+    ///
+    /// The attribute name is matched case-insensitively.
     pub fn has_attribute(&self, name: &str) -> bool {
-        self.attributes.iter().any(|a| a.attribute == name)
+        self.attributes
+            .iter()
+            .any(|a| a.attribute.eq_ignore_ascii_case(name))
     }
 
     /// Gets the first value of the given attribute.
@@ -800,13 +810,15 @@ impl Session {
     }
 
     /// Gets an iterator over all attribute values of the given name.
+    ///
+    /// The attribute name is matched case-insensitively.
     pub fn get_attribute_values<'a>(
         &'a self,
         name: &'a str,
     ) -> impl Iterator<Item = Option<&'a str>> {
         self.attributes
             .iter()
-            .filter(move |a| a.attribute == name)
+            .filter(move |a| a.attribute.eq_ignore_ascii_case(name))
             .map(|a| a.value.as_deref())
     }
 
@@ -1262,6 +1274,34 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
         assert_eq!(
             connection.try_parse_connection_ip_address().unwrap(),
             IpAddr::V6(Ipv6Addr::LOCALHOST),
+        );
+    }
+
+    #[test]
+    fn attribute_lookup_case_insensitive() {
+        let sdp = b"v=0\r
+o=- 0 0 IN IP4 0.0.0.0\r
+s=x\r
+t=0 0\r
+a=Foo:Bar\r
+m=audio 49170 RTP/AVP 0\r
+a=RTPMAP:0 pcma/8000\r
+";
+        let session = Session::parse(&sdp[..]).unwrap();
+
+        // The stored case is preserved...
+        assert_eq!(session.attributes[0].attribute, "Foo");
+        // ...but lookups match case-insensitively in both directions.
+        assert!(session.has_attribute("foo"));
+        assert!(session.has_attribute("FOO"));
+        assert_eq!(session.get_first_attribute_value("FOO"), Some(Some("Bar")));
+
+        let media = &session.medias[0];
+        assert!(media.has_attribute("rtpmap"));
+        assert!(media.has_attribute("RtPmAp"));
+        assert_eq!(
+            media.get_attribute_values("rtpmap").collect::<Vec<_>>(),
+            vec![Some("0 pcma/8000")]
         );
     }
 }
