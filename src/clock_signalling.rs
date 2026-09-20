@@ -664,6 +664,15 @@ impl fmt::Display for Eui64 {
 }
 
 /// PTP domain.
+///
+/// This deviates from the RFC 7273 grammar, which defines both variants
+/// with `domain-name=` and `domain-nmbr=` prefixes and a domain name of
+/// 1-16 characters. None of the examples in the RFC use the prefixes, so
+/// parsing follows the examples and accepts a bare domain name or a bare
+/// domain number (0-127).
+///
+/// A domain name must be exactly 16 characters: a shorter one would be
+/// indistinguishable from a domain number when parsing the bare value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PtpDomain {
     /// IEEE 1588-2002
@@ -702,10 +711,8 @@ impl FromStr for PtpDomain {
     type Err = AttributeError;
 
     fn from_str(s: &str) -> Result<Self, AttributeError> {
-        // XXX: The RFC grammar is wrong here. It defines that
-        // both variants here should start with `domain-name=` or
-        // `domain-nmbr=` but none of the examples do that so
-        // let's assume the grammar is wrong.
+        // Bare values instead of the `domain-name=`/`domain-nmbr=`
+        // prefixes of the RFC grammar, see the [`PtpDomain`] docs.
         if s.len() == 16 {
             Ok(Self::DomainName {
                 name: s.to_string(),
