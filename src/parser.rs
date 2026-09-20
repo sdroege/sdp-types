@@ -120,13 +120,19 @@ impl std::fmt::Display for ParserError {
 impl Origin {
     fn parse(line: &Line) -> Result<Origin, ParserError> {
         // <username> <sess-id> <sess-version> <nettype> <addrtype> <unicast-address>
-        let mut origin = line.value.splitn_str(6, b" ");
+        //
+        // None of the fields may be empty, so treat runs of spaces as a
+        // single separator.
+        let mut origin = line.value.split_str(b" ").filter(|part| !part.is_empty());
         let username = parse_str(&mut origin, line.n, "Origin username")?;
         let sess_id = parse_str(&mut origin, line.n, "Origin sess-id")?;
         let sess_version = parse_str_u64(&mut origin, line.n, "Origin sess-version")?;
         let nettype = parse_str(&mut origin, line.n, "Origin nettype")?;
         let addrtype = parse_str(&mut origin, line.n, "Origin addrtype")?;
         let unicast_address = parse_str(&mut origin, line.n, "Origin unicast-address")?;
+        if origin.next().is_some() {
+            return Err(ParserError::FieldTrailingData(line.n, "Origin"));
+        }
 
         Ok(Origin {
             username: if username == "-" {
@@ -146,11 +152,17 @@ impl Origin {
 impl Connection {
     fn parse(line: &Line) -> Result<Connection, ParserError> {
         // <nettype> <addrtype> <connection-address>
-        let mut connection = line.value.splitn_str(3, b" ");
+        //
+        // None of the fields may be empty, so treat runs of spaces as a
+        // single separator.
+        let mut connection = line.value.split_str(b" ").filter(|part| !part.is_empty());
         let nettype = parse_str(&mut connection, line.n, "Connection nettype")?;
         let addrtype = parse_str(&mut connection, line.n, "Connection addrtype")?;
         let connection_address =
             parse_str(&mut connection, line.n, "Connection connection-address")?;
+        if connection.next().is_some() {
+            return Err(ParserError::FieldTrailingData(line.n, "Connection"));
+        }
 
         Ok(Connection {
             nettype: NetType::from_str(&nettype).expect("infallible"),
@@ -814,6 +826,49 @@ r=1d 1h 0\r
     }
 
     #[test]
+    fn origin_and_connection_field_strictness() {
+        // Whitespace leniency: runs of spaces and trailing spaces must not
+        // shift or corrupt the fields.
+        let sdp = b"v=0\r
+o=-  4922720 1 IN IP4 10.0.0.108 \r
+s=x\r
+c=IN IP4  224.2.17.12/127 \r
+t=0 0\r
+";
+        let session = Session::parse(&sdp[..]).unwrap();
+        assert_eq!(session.origin.sess_id, "4922720");
+        assert_eq!(session.origin.sess_version, 1);
+        assert_eq!(session.origin.unicast_address, "10.0.0.108");
+        assert_eq!(
+            session.connection.as_ref().unwrap().connection_address,
+            "224.2.17.12/127"
+        );
+
+        // Extra fields must be rejected instead of being absorbed into the
+        // last field.
+        let sdp = b"v=0\r
+o=- 4922720 1 IN IP4 10.0.0.108 extra\r
+s=x\r
+t=0 0\r
+";
+        assert!(matches!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::FieldTrailingData(2, "Origin"))
+        ));
+
+        let sdp = b"v=0\r
+o=- 4922720 1 IN IP4 10.0.0.108\r
+s=x\r
+c=IN IP4 224.2.17.12/127 extra\r
+t=0 0\r
+";
+        assert!(matches!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::FieldTrailingData(4, "Connection"))
+        ));
+    }
+
+    #[test]
     fn parse_sdp() {
         let sdp = b"v=0\r
 o=jdoe 2890844526 2890842807 IN IP4 10.47.16.5\r
@@ -1008,8 +1063,15 @@ a=appversion:1.0\r
     #[test]
     fn parse_overflowing_time() {
         assert_eq!(
-            Session::parse(b"v=0\no=  0  =\x00 \ns=q\nt=0 5\nz=00 666666000079866660m "),
+            Session::parse(b"v=0\no=- 0 0 IN IP4 0.0.0.0\ns=q\nt=0 5\nz=00 666666000079866660m "),
             Err(ParserError::InvalidFieldFormat(5, "TimeZone offset"))
+        );
+
+        // The garbage in the origin line is now rejected instead of being
+        // absorbed into its fields.
+        assert_eq!(
+            Session::parse(b"v=0\no=  0  =\x00 \ns=q\nt=0 5\nz=00 666666000079866660m "),
+            Err(ParserError::MissingField(2, "Origin sess-version"))
         );
     }
 

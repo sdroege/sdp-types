@@ -39,6 +39,11 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   `ntp=::1`), which were previously mistaken for a host:port split.
   Bracketed addresses (`ntp=[::1]:123`) now store the bare address in
   `NtpServerAddr::HostPort::hostname` and get re-bracketed on display.
+- Parser: treat runs of spaces as a single separator in `o=` and `c=` lines
+  and reject extra fields at the end instead of absorbing them into the last
+  field. Previously extra spaces could shift or corrupt the parsed fields.
+  This is a breaking change: session descriptions with extra fields in
+  `o=` or `c=` lines now fail to parse with `ParserError::FieldTrailingData`.
 
 ## [0.2.0]
 ### Improved
