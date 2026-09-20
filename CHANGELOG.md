@@ -7,6 +7,10 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 
 ## [Unreleased]
 ### Fixed
+- Parser: reject repeat (`r=`) lines without a preceding time (`t=`) line
+  (RFC 8866, section 4) instead of silently dropping them.
+  This is a breaking change: such session descriptions now fail to parse
+  with `ParserError::RepeatWithoutTime`.
 - Don't silently skip malformed lines in the parser, propagate the error.
 - `mediaclk` attribute: don't panic when an `id=` value has no clock source.
 - `mediaclk` attribute: reject garbage appended to the `direct` clock token

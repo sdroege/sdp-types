@@ -50,6 +50,8 @@ pub enum ParserError {
     MultipleMediaTitles(usize),
     /// A second key line was found at the given line.
     MultipleKeys(usize),
+    /// A repeat line was found without a preceding time line.
+    RepeatWithoutTime(usize),
 }
 
 impl std::error::Error for ParserError {}
@@ -108,6 +110,9 @@ impl std::fmt::Display for ParserError {
                 write!(f, "Multiple media titles in line {line}")
             }
             ParserError::MultipleKeys(line) => write!(f, "Multiple keys in line {line}"),
+            ParserError::RepeatWithoutTime(line) => {
+                write!(f, "Repeat line {line} without a preceding time line")
+            }
         }
     }
 }
@@ -543,10 +548,12 @@ impl Session {
 
                 // Parse repeat lines
                 // - Can exist not at all, once or multiple times
+                // - Must follow a time line (RFC 8866, section 4)
                 b'r' => {
-                    if let Some(t) = times.last_mut() {
-                        t.repeats.push(Repeat::parse(&line)?);
-                    }
+                    let Some(t) = times.last_mut() else {
+                        return Err(ParserError::RepeatWithoutTime(line.n));
+                    };
+                    t.repeats.push(Repeat::parse(&line)?);
                 }
 
                 // Parse zones line:
@@ -776,6 +783,34 @@ broken\r
                 "Line not in key=value format"
             ))
         ));
+    }
+
+    #[test]
+    fn repeat_line_without_time_line_is_error() {
+        // Repeat lines must follow a time line (RFC 8866, section 4).
+        let sdp = b"v=0\r
+s=x\r
+r=7d 1h 0 90000\r
+t=0 0\r
+";
+        assert_eq!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::RepeatWithoutTime(3))
+        );
+
+        // Repeat lines after a time line are still fine, also with multiple
+        // time lines.
+        let sdp = b"v=0\r
+s=x\r
+t=0 0\r
+r=7d 1h 0 90000\r
+t=1 2\r
+r=1d 1h 0\r
+";
+        let session = Session::parse(&sdp[..]).unwrap();
+        assert_eq!(session.times.len(), 2);
+        assert_eq!(session.times[0].repeats.len(), 1);
+        assert_eq!(session.times[1].repeats.len(), 1);
     }
 
     #[test]
