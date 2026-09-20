@@ -200,6 +200,10 @@ impl Media {
 
 impl Session {
     /// Write the SDP session description to a `std::io::Write`.
+    ///
+    /// The values are written as-is without further validation, see the
+    /// crate-level documentation for details. If the session description has
+    /// no time description, a `t=0 0` line is written instead.
     pub fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         writeln!(w, "v=0\r")?;
         self.origin.write(w)?;

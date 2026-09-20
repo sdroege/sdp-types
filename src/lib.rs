@@ -66,6 +66,22 @@
 //!  * Network addresses, Phone numbers, E-Mail addresses and various other fields
 //!    are currently parsed as a plain string and not according to the SDP
 //!    grammar.
+//!
+//! ## Validation
+//!
+//! The parser checks the structure of a session description (line keys, field
+//! counts, and the syntax of numeric and enum fields) but does not enforce
+//! all semantic constraints of the RFCs. Likewise the data model accepts
+//! values that the RFC grammars would not allow, e.g. `Origin::sess_id` must
+//! be a numeric string but this is not checked.
+//!
+//! `Session::write()` writes the data model out as-is without validating it,
+//! apart from stripping characters that would break the line structure (CR,
+//! LF, NUL) and writing a `t=0 0` line if the session description contains no
+//! time description at all.
+//!
+//! Applications that need stricter conformance must validate session
+//! descriptions themselves.
 
 use std::{net::IpAddr, str::FromStr};
 
