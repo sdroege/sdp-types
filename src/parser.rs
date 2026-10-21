@@ -127,8 +127,8 @@ impl Origin {
         let username = parse_str(&mut origin, line.n, "Origin username")?;
         let sess_id = parse_str(&mut origin, line.n, "Origin sess-id")?;
         let sess_version = parse_str_u64(&mut origin, line.n, "Origin sess-version")?;
-        let nettype = parse_str(&mut origin, line.n, "Origin nettype")?;
-        let addrtype = parse_str(&mut origin, line.n, "Origin addrtype")?;
+        let nettype = parse_token(&mut origin, line.n, "Origin nettype")?;
+        let addrtype = parse_token(&mut origin, line.n, "Origin addrtype")?;
         let unicast_address = parse_str(&mut origin, line.n, "Origin unicast-address")?;
         if origin.next().is_some() {
             return Err(ParserError::FieldTrailingData(line.n, "Origin"));
@@ -156,8 +156,8 @@ impl Connection {
         // None of the fields may be empty, so treat runs of spaces as a
         // single separator.
         let mut connection = line.value.split_str(b" ").filter(|part| !part.is_empty());
-        let nettype = parse_str(&mut connection, line.n, "Connection nettype")?;
-        let addrtype = parse_str(&mut connection, line.n, "Connection addrtype")?;
+        let nettype = parse_token(&mut connection, line.n, "Connection nettype")?;
+        let addrtype = parse_token(&mut connection, line.n, "Connection addrtype")?;
         let connection_address =
             parse_str(&mut connection, line.n, "Connection connection-address")?;
         if connection.next().is_some() {
@@ -594,14 +594,10 @@ impl Session {
             }
         }
 
-        let origin = origin.unwrap_or_else(|| Origin {
-            username: None,
-            sess_id: String::new(),
-            sess_version: 0,
-            nettype: NetType::Other(String::new()),
-            addrtype: AddrType::Other(String::new()),
-            unicast_address: String::new(),
-        });
+        // The placeholder is written into sessions without an "o=" line, so
+        // it must consist of valid fields that parse again.
+        let origin =
+            origin.unwrap_or_else(|| Origin::with_ip_addr("0", 0, std::net::Ipv4Addr::UNSPECIFIED));
         let session_name = session_name.unwrap_or_default();
 
         let time_zones = time_zones.unwrap_or_default();
@@ -676,6 +672,50 @@ fn parse_str_u64<'a>(
         .and_then(|s| {
             s.parse()
                 .map_err(|_| ParserError::InvalidFieldFormat(line, field))
+        })
+}
+
+// RFC 8866, section 9: token = 1*(token-char), where token-char is
+// ALPHA / DIGIT / "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" /
+// "-" / "." / "^" / "_" / "`" / "{" / "|" / "}" / "~". RFC 4566,
+// section 9 gives the same set as ranges: %x21 / %x23-27 / %x2A-2B /
+// %x2D-2E / %x30-39 / %x41-5A / %x5E-7E.
+fn is_token(s: &[u8]) -> bool {
+    !s.is_empty()
+        && s.iter().all(|b| {
+            matches!(
+                b,
+                0x21 | 0x23..=0x27
+                    | 0x2a..=0x2b
+                    | 0x2d..=0x2e
+                    | 0x30..=0x39
+                    | 0x41..=0x5a
+                    | 0x5e..=0x7e
+            )
+        })
+}
+
+// Parses a token as defined by the RFC 8866 grammar, e.g. for the nettype
+// and addrtype fields. Anything else would corrupt the line structure when
+// the session description is written again.
+fn parse_token<'a>(
+    it: &mut impl Iterator<Item = &'a [u8]>,
+    line: usize,
+    field: &'static str,
+) -> Result<String, ParserError> {
+    it.next()
+        .ok_or(ParserError::MissingField(line, field))
+        .and_then(|b| {
+            if is_token(b) {
+                Ok(b)
+            } else {
+                Err(ParserError::InvalidFieldFormat(line, field))
+            }
+        })
+        .and_then(|b| {
+            std::str::from_utf8(b)
+                .map(String::from)
+                .map_err(|_| ParserError::InvalidFieldEncoding(line, field))
         })
 }
 
@@ -795,6 +835,80 @@ broken\r
                 "Line not in key=value format"
             ))
         ));
+    }
+
+    #[test]
+    fn nettype_and_addrtype_must_be_tokens() {
+        // RFC 8866, section 9 defines nettype/addrtype as tokens. Other
+        // values would corrupt the line structure when written again.
+        let sdp = b"v=0\r
+o=- 0 0 IN\rX IP4 1.2.3.4\r
+s=x\r
+t=0 0\r
+";
+        assert_eq!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::InvalidFieldFormat(2, "Origin nettype"))
+        );
+
+        let sdp = b"v=0\r
+o=- 0 0 IN IP4:x 1.2.3.4\r
+s=x\r
+t=0 0\r
+";
+        assert_eq!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::InvalidFieldFormat(2, "Origin addrtype"))
+        );
+
+        let sdp = b"v=0\r
+s=x\r
+t=0 0\r
+c=IN\rX IP4 1.2.3.4\r
+";
+        assert_eq!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::InvalidFieldFormat(4, "Connection nettype"))
+        );
+
+        // Characters outside the token set (RFC 8866, section 9), e.g.
+        // '<' or '/', are rejected as well.
+        let sdp = b"v=0\r
+o=- 0 0 a<b IP4 1.2.3.4\r
+s=x\r
+t=0 0\r
+";
+        assert_eq!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::InvalidFieldFormat(2, "Origin nettype"))
+        );
+
+        let sdp = b"v=0\r
+o=- 0 0 IN IP4/x 1.2.3.4\r
+s=x\r
+t=0 0\r
+";
+        assert_eq!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::InvalidFieldFormat(2, "Origin addrtype"))
+        );
+    }
+
+    #[test]
+    fn session_without_origin_round_trips() {
+        // A missing "o=" line is accepted as a leniency. The placeholder
+        // origin written for it must parse back, or the session does not
+        // round-trip through write()/parse().
+        let sdp = b"v=0\r
+s=x\r
+t=0 0\r
+";
+        let session = Session::parse(&sdp[..]).unwrap();
+
+        let mut written = vec![];
+        session.write(&mut written).unwrap();
+        let parsed = Session::parse(&written[..]).unwrap();
+        assert_eq!(parsed.origin, session.origin);
     }
 
     #[test]
