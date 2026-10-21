@@ -4,7 +4,7 @@
 
 use super::*;
 
-fn format_time<W: std::io::Write>(w: &mut W, t: u64) -> Result<(), std::io::Error> {
+fn format_time<W: std::io::Write + ?Sized>(w: &mut W, t: u64) -> Result<(), std::io::Error> {
     if t == 0 {
         write!(w, "{t}")?;
     } else if t % 86_400 == 0 {
@@ -21,7 +21,7 @@ fn format_time<W: std::io::Write>(w: &mut W, t: u64) -> Result<(), std::io::Erro
 }
 
 impl Origin {
-    fn write<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         writeln!(
             w,
             "o={username} {sess_id} {sess_version} {nettype} {addrtype} {unicast_address}\r",
@@ -40,7 +40,7 @@ impl Origin {
 }
 
 impl Connection {
-    fn write<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         writeln!(
             w,
             "c={nettype} {addrtype} {connection_address}\r",
@@ -52,7 +52,7 @@ impl Connection {
 }
 
 impl Bandwidth {
-    fn write<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         writeln!(
             w,
             "b={bwtype}:{bw}\r",
@@ -63,7 +63,7 @@ impl Bandwidth {
 }
 
 impl Time {
-    fn write<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         writeln!(
             w,
             "t={start_time} {stop_time}\r",
@@ -74,7 +74,7 @@ impl Time {
 }
 
 impl Repeat {
-    fn write<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         write!(w, "r=")?;
         format_time(w, self.repeat_interval)?;
         write!(w, " ")?;
@@ -90,7 +90,10 @@ impl Repeat {
 }
 
 impl TimeZone {
-    fn write<W: std::io::Write>(w: &mut W, zones: &[TimeZone]) -> Result<(), std::io::Error> {
+    fn write<W: std::io::Write + ?Sized>(
+        w: &mut W,
+        zones: &[TimeZone],
+    ) -> Result<(), std::io::Error> {
         write!(w, "z=")?;
 
         let mut first = true;
@@ -113,7 +116,7 @@ impl TimeZone {
 }
 
 impl Key {
-    fn write<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         if let Some(ref encryption_key) = self.encryption_key {
             writeln!(
                 w,
@@ -128,7 +131,7 @@ impl Key {
 }
 
 impl Attribute {
-    fn write<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         if let Some(ref value) = self.value {
             writeln!(
                 w,
@@ -143,7 +146,7 @@ impl Attribute {
 }
 
 impl Media {
-    fn write<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         write!(w, "m={media} {port}", media = self.media, port = self.port)?;
 
         if let Some(ref num_ports) = self.num_ports {
@@ -177,7 +180,7 @@ impl Media {
 
 impl Session {
     /// Write the SDP session description to a `std::io::Write`.
-    pub fn write<W: std::io::Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    pub fn write<W: std::io::Write + ?Sized>(&self, w: &mut W) -> Result<(), std::io::Error> {
         writeln!(w, "v=0\r")?;
         self.origin.write(w)?;
         writeln!(w, "s={session_name}\r", session_name = self.session_name)?;
