@@ -46,8 +46,8 @@ impl Origin {
             },
             sess_id = FreeText(&self.sess_id),
             sess_version = self.sess_version,
-            nettype = self.nettype,
-            addrtype = self.addrtype,
+            nettype = FreeText(self.nettype.as_str()),
+            addrtype = FreeText(self.addrtype.as_str()),
             unicast_address = FreeText(&self.unicast_address),
         )
     }
@@ -58,8 +58,8 @@ impl Connection {
         writeln!(
             w,
             "c={nettype} {addrtype} {connection_address}\r",
-            nettype = self.nettype,
-            addrtype = self.addrtype,
+            nettype = FreeText(self.nettype.as_str()),
+            addrtype = FreeText(self.addrtype.as_str()),
             connection_address = FreeText(&self.connection_address)
         )
     }
@@ -384,8 +384,8 @@ a=rtpmap:99 h263-1998/90000\r
                 username: Some("user\r\ns=evil".into()),
                 sess_id: "123\n456".into(),
                 sess_version: 1,
-                nettype: "IN".into(),
-                addrtype: "IP4".into(),
+                nettype: "I\r\nN".into(),
+                addrtype: "IP\r4".into(),
                 unicast_address: "10.0.0.1".into(),
             },
             session_name: "test\r\nm=audio 0 RTP/AVP 0".into(),
@@ -394,8 +394,8 @@ a=rtpmap:99 h263-1998/90000\r
             emails: vec![],
             phones: vec![],
             connection: Some(Connection {
-                nettype: "IN".into(),
-                addrtype: "IP4".into(),
+                nettype: "I\r\nN".into(),
+                addrtype: "IP\r4".into(),
                 connection_address: "224.0.0.1\r\na=evil".into(),
             }),
             bandwidths: vec![Bandwidth {
