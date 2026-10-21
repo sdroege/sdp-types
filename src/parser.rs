@@ -280,13 +280,16 @@ impl TimeZone {
                         (false, s)
                     };
 
-                    parse_typed_time(s, line.n, "TimeZone offset")
-                        .and_then(|t| {
-                            t.try_into().map_err(|_| {
-                                ParserError::InvalidFieldFormat(line.n, "TimeZone offset")
-                            })
-                        })
-                        .map(|t: i64| if sign { -t } else { t })
+                    parse_typed_time(s, line.n, "TimeZone offset").and_then(|t| {
+                        // The magnitude of i64::MIN does not fit into i64,
+                        // so combine sign and magnitude via i128 to allow
+                        // a successful round trip check.
+                        let offset = if sign { -(t as i128) } else { t as i128 };
+                        let offset: i64 = offset.try_into().map_err(|_| {
+                            ParserError::InvalidFieldFormat(line.n, "TimeZone offset")
+                        })?;
+                        Ok(offset)
+                    })
                 })?;
 
             ret.push(TimeZone {

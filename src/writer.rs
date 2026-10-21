@@ -494,5 +494,9 @@ t=0 0\r
 z=2882844526 -9223372036854775808\r
 ";
         assert_eq!(String::from_utf8_lossy(&written), expected);
+
+        // The written offset must parse back again.
+        let parsed = Session::parse(&written[..]).unwrap();
+        assert_eq!(parsed.time_zones, sdp.time_zones);
     }
 }
