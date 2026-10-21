@@ -48,6 +48,14 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   name case-insensitively on both `Session` and `Media`, like
   `attributes_typed()` already did. The stored attribute names keep their
   original case.
+- Parser: `nettype` and `addrtype` in `o=` and `c=` lines must be tokens
+  (RFC 8866, section 9). Previously arbitrary bytes were accepted, which
+  corrupted the line structure when written again.
+  This is a breaking change: such session descriptions now fail to parse
+  with `ParserError::InvalidFieldFormat`.
+- Parser: sessions without an `o=` line now get the placeholder origin
+  `o=- 0 0 IN IP4 0.0.0.0` instead of one with empty fields, so that such
+  sessions can be written and parsed again.
 
 ## [0.2.0]
 ### Improved
