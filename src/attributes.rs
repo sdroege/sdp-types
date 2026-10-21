@@ -1596,7 +1596,8 @@ impl FromStr for SrtpKeyParam {
                                     attr: Crypto::NAME.to_string(),
                                 });
                             };
-                            if lifetime == 0 || lifetime > MAX_LIFETIME {
+                            // 1u64.checked_shl() never returns zero
+                            if lifetime > MAX_LIFETIME {
                                 return Err(AttributeError::InvalidParamValue {
                                     param: "Lifetime".to_string(),
                                     val: next_param.to_string(),
