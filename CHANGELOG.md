@@ -56,6 +56,11 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 - Parser: sessions without an `o=` line now get the placeholder origin
   `o=- 0 0 IN IP4 0.0.0.0` instead of one with empty fields, so that such
   sessions can be written and parsed again.
+- Parser: reject NUL and CR bytes inside lines (RFC 8866, section 9).
+  Previously they were accepted and broke a round trip pass: now the
+  writer strips them, which can leave mandatory fields empty.
+  This is a breaking change: such session descriptions now fail to parse
+  with `ParserError::InvalidLineFormat`.
 
 ## [0.2.0]
 ### Improved

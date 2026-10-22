@@ -73,7 +73,10 @@
 //! counts, and the syntax of numeric and enum fields) but does not enforce
 //! all semantic constraints of the RFCs. Likewise the data model accepts
 //! values that the RFC grammars would not allow, e.g. `Origin::sess_id` must
-//! be a numeric string but this is not checked.
+//! be a numeric string but this is not checked. Lines containing NUL or CR
+//! bytes are rejected, and the "nettype"/"addrtype" subfields of "o=" and
+//! "c=" must be RFC 8866 tokens; other non-conforming model values are still
+//! written verbatim.
 //!
 //! `Session::write()` writes the data model out as-is without validating it,
 //! apart from stripping characters that would break the line structure (CR,
