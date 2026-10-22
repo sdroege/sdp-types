@@ -11,7 +11,7 @@ use std::{
     str::FromStr,
 };
 
-use crate::{builders, enums::*, Attribute};
+use crate::{builders, enums::*, parser::is_token, Attribute};
 
 /// Trait for Typed Attribute structs
 pub trait TypedAttribute: Display + FromStr<Err = AttributeError> {
@@ -502,13 +502,16 @@ impl FromStr for Rtcp {
             return Ok(Self::with_port(port));
         };
 
-        let Ok(nettype) = NetType::from_str(nettype) else {
+        // RFC 3605 reuses the SDP nettype and addrtype tokens (RFC 8866,
+        // section 9), same as in o= and c= lines.
+        if !is_token(nettype.as_bytes()) {
             return Err(AttributeError::InvalidParamValue {
                 param: "Network type".to_string(),
                 val: nettype.to_string(),
                 attr: <Self as TypedAttribute>::NAME.to_string(),
             });
-        };
+        }
+        let nettype = NetType::from_str(nettype).expect("infallible");
 
         let Some(addrtype) = i.next() else {
             return Err(AttributeError::ParamNotFound {
@@ -517,13 +520,14 @@ impl FromStr for Rtcp {
             });
         };
 
-        let Ok(addrtype) = AddrType::from_str(addrtype) else {
+        if !is_token(addrtype.as_bytes()) {
             return Err(AttributeError::InvalidParamValue {
                 param: "Address type".to_string(),
                 val: addrtype.to_string(),
                 attr: <Self as TypedAttribute>::NAME.to_string(),
             });
-        };
+        }
+        let addrtype = AddrType::from_str(addrtype).expect("infallible");
 
         let Some(connection_address) = i.next() else {
             return Err(AttributeError::ParamNotFound {
@@ -2941,5 +2945,27 @@ a=rtcp:53020\r
 
         assert!("6002 IN  127.0.0.1".parse::<Rtcp>().is_err());
         assert!("6003 IN IP4 127.0.0.1 extra".parse::<Rtcp>().is_err());
+    }
+
+    #[test]
+    fn parse_rtcp_nettype_and_addrtype_must_be_tokens() {
+        // RFC 3605 reuses the SDP nettype and addrtype tokens (RFC 8866,
+        // section 9), so reject other values like the o= and c= parsers do.
+        assert_eq!(
+            "6000 a<b IP4 127.0.0.1".parse::<Rtcp>().unwrap_err(),
+            AttributeError::InvalidParamValue {
+                param: "Network type".to_string(),
+                val: "a<b".to_string(),
+                attr: "rtcp".to_string(),
+            }
+        );
+        assert_eq!(
+            "6000 IN IP4/x 127.0.0.1".parse::<Rtcp>().unwrap_err(),
+            AttributeError::InvalidParamValue {
+                param: "Address type".to_string(),
+                val: "IP4/x".to_string(),
+                attr: "rtcp".to_string(),
+            }
+        );
     }
 }
