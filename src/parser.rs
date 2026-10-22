@@ -683,7 +683,7 @@ fn parse_str_u64<'a>(
 // "-" / "." / "^" / "_" / "`" / "{" / "|" / "}" / "~". RFC 4566,
 // section 9 gives the same set as ranges: %x21 / %x23-27 / %x2A-2B /
 // %x2D-2E / %x30-39 / %x41-5A / %x5E-7E.
-fn is_token(s: &[u8]) -> bool {
+pub(crate) fn is_token(s: &[u8]) -> bool {
     !s.is_empty()
         && s.iter().all(|b| {
             matches!(

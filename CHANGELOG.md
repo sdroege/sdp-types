@@ -61,6 +61,11 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   writer strips them, which can leave mandatory fields empty.
   This is a breaking change: such session descriptions now fail to parse
   with `ParserError::InvalidLineFormat`.
+- `rtcp` attribute: validate `nettype` and `addrtype` in the optional
+  address part as tokens (RFC 3605, RFC 8866 section 9), like in `o=`
+  and `c=` lines.
+  This is a breaking change: attribute values with other characters in
+  these fields now fail to parse with `AttributeError::InvalidParamValue`.
 
 ## [0.2.0]
 ### Improved
