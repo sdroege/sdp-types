@@ -780,6 +780,12 @@ impl<'item, I: Iterator<Item = (usize, &'item [u8])>> FallibleIterator for LineP
             if line.is_empty() {
                 continue;
             }
+            // NUL and CR can't appear inside an SDP line (RFC 8866,
+            // section 9, byte-string). A bare CR survives line splitting
+            // and corrupts the output when written again.
+            if line.iter().any(|&byte| byte == b'\0' || byte == b'\r') {
+                return Err(ParserError::InvalidLineFormat(n, "Line contains NUL or CR"));
+            }
             let equals = line.iter().position(|b| *b == b'=');
             let key = match equals {
                 None => {
@@ -845,7 +851,7 @@ broken\r
         // RFC 8866, section 9 defines nettype/addrtype as tokens. Other
         // values would corrupt the line structure when written again.
         let sdp = b"v=0\r
-o=- 0 0 IN\rX IP4 1.2.3.4\r
+o=- 0 0 IN:X IP4 1.2.3.4\r
 s=x\r
 t=0 0\r
 ";
@@ -867,7 +873,7 @@ t=0 0\r
         let sdp = b"v=0\r
 s=x\r
 t=0 0\r
-c=IN\rX IP4 1.2.3.4\r
+c=IN:X IP4 1.2.3.4\r
 ";
         assert_eq!(
             Session::parse(&sdp[..]),
@@ -894,6 +900,31 @@ t=0 0\r
         assert_eq!(
             Session::parse(&sdp[..]),
             Err(ParserError::InvalidFieldFormat(2, "Origin addrtype"))
+        );
+    }
+
+    #[test]
+    fn nul_and_cr_in_lines_is_error() {
+        // NUL and CR are not valid inside SDP lines (RFC 8866, section 9,
+        // byte-string). Accepting them breaks round-tripping: the writer
+        // strips them, which can leave mandatory fields empty.
+        let sdp = b"v=0\r
+o=jdoe 2e 22 2 on \x00\r
+";
+        assert_eq!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::InvalidLineFormat(2, "Line contains NUL or CR"))
+        );
+
+        // A bare CR survives line splitting and would corrupt the line
+        // structure when written again.
+        let sdp = b"v=0\r
+s=x\r
+c=IN IP4 a\rb\r
+";
+        assert_eq!(
+            Session::parse(&sdp[..]),
+            Err(ParserError::InvalidLineFormat(3, "Line contains NUL or CR"))
         );
     }
 
@@ -1185,9 +1216,13 @@ a=appversion:1.0\r
         );
 
         // The garbage in the origin line is now rejected instead of being
-        // absorbed into its fields.
+        // absorbed into its fields. The NUL is rejected at line level.
         assert_eq!(
             Session::parse(b"v=0\no=  0  =\x00 \ns=q\nt=0 5\nz=00 666666000079866660m "),
+            Err(ParserError::InvalidLineFormat(2, "Line contains NUL or CR"))
+        );
+        assert_eq!(
+            Session::parse(b"v=0\no=  0  = \ns=q\nt=0 5\nz=00 666666000079866660m "),
             Err(ParserError::MissingField(2, "Origin sess-version"))
         );
     }
