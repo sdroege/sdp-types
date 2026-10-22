@@ -48,9 +48,11 @@ fuzz_target!(|data: &[u8]| {
         Err(_) => return,
     };
 
-    // serialize the parsed session
+    // Serialize the parsed session and parse the result again: the written
+    // output must be valid input again.
     let mut written = vec![];
     session.write(&mut written).unwrap();
+    Session::parse(&written).unwrap();
 
     for_all_typed_attributes!(session, exercise_typed_attributes);
     for media in &session.medias {
