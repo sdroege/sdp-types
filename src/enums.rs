@@ -382,6 +382,34 @@ impl TransportProto {
             TransportProto::Other(proto) => proto.as_str(),
         }
     }
+
+    /// Whether this is an RTP transport (any of the `RTP/...` profiles).
+    ///
+    /// Profile strings are classified by their RTP profile component
+    /// (RFC 8866, section 5.7), so unregistered profiles containing it (e.g.
+    /// the legacy `RTP/AVP/TCP`) are also detected. Returns `false` for SCTP
+    /// transports and [`TransportProto::Udp`].
+    pub fn is_rtp(&self) -> bool {
+        let proto = self.as_str();
+        proto.starts_with("RTP/") || proto.contains("/RTP/")
+    }
+
+    /// Whether this is an SCTP transport (used for datachannels).
+    pub fn is_sctp(&self) -> bool {
+        self.as_str().ends_with("/SCTP")
+    }
+
+    /// Whether this is an RTP transport secured with SRTP (the `SAVP`
+    /// profiles).
+    pub fn is_secure(&self) -> bool {
+        self.is_rtp() && self.as_str().contains("SAVP")
+    }
+
+    /// Whether this RTP transport includes the RTP feedback (`F`) profile
+    /// extension, i.e. it supports per-PT `a=rtcp-fb` attributes.
+    pub fn is_avpf(&self) -> bool {
+        self.is_rtp() && self.as_str().ends_with("AVPF")
+    }
 }
 
 impl FromStr for TransportProto {
@@ -428,6 +456,49 @@ impl From<&str> for TransportProto {
 }
 
 impl Display for TransportProto {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Direction of a restricted RTP stream
+///
+/// See [RFC 8851 Section 4](https://datatracker.ietf.org/doc/html/rfc8851#section-4)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum RidDirection {
+    /// Sender-side restriction
+    Send,
+    /// Receiver-side restriction
+    Recv,
+}
+
+impl RidDirection {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RidDirection::Send => "send",
+            RidDirection::Recv => "recv",
+        }
+    }
+}
+
+impl FromStr for RidDirection {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // The grammar (RFC 8851, section 10) is case-sensitive; parsing is
+        // case-insensitive like everywhere else in this crate.
+        if s.eq_ignore_ascii_case("send") {
+            Ok(RidDirection::Send)
+        } else if s.eq_ignore_ascii_case("recv") {
+            Ok(RidDirection::Recv)
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl std::fmt::Display for RidDirection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -1024,4 +1095,70 @@ impl From<u8> for RtcpFbPt {
 pub enum CandidateAddress {
     IpAddr(std::net::IpAddr),
     FQDN(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transport_proto_classification() {
+        let cases = [
+            // (proto, is_rtp, is_sctp, is_secure, is_avpf)
+            (TransportProto::Udp, false, false, false, false),
+            (TransportProto::RtpAvp, true, false, false, false),
+            (TransportProto::RtpAvpf, true, false, false, true),
+            (TransportProto::RtpSavp, true, false, true, false),
+            (TransportProto::RtpSavpf, true, false, true, true),
+            (TransportProto::TcpDtlsRtpSavp, true, false, true, false),
+            (TransportProto::TcpDtlsRtpSavpf, true, false, true, true),
+            (TransportProto::UdpTlsRtpSavp, true, false, true, false),
+            (TransportProto::UdpTlsRtpSavpf, true, false, true, true),
+            (TransportProto::UdpDtlsSctp, false, true, false, false),
+            (TransportProto::TcpDtlsSctp, false, true, false, false),
+            (TransportProto::DtlsSctp, false, true, false, false),
+            (
+                TransportProto::Other("FOO".into()),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                TransportProto::Other("RTP/AV".into()),
+                true,
+                false,
+                false,
+                false,
+            ),
+            (
+                TransportProto::Other("RTP/AVP/TCP".into()),
+                true,
+                false,
+                false,
+                false,
+            ),
+            (
+                TransportProto::Other("UDP/TLS/RTP/SAVPF".into()),
+                true,
+                false,
+                true,
+                true,
+            ),
+            (
+                TransportProto::Other("AVPF".into()),
+                false,
+                false,
+                false,
+                false,
+            ),
+        ];
+
+        for (proto, rtp, sctp, secure, avpf) in cases {
+            assert_eq!(proto.is_rtp(), rtp, "{:?} is_rtp", proto);
+            assert_eq!(proto.is_sctp(), sctp, "{:?} is_sctp", proto);
+            assert_eq!(proto.is_secure(), secure, "{:?} is_secure", proto);
+            assert_eq!(proto.is_avpf(), avpf, "{:?} is_avpf", proto);
+        }
+    }
 }

@@ -6,6 +6,28 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
 ## [Unreleased]
+### Added
+- `TransportProto`: Classification helpers `is_rtp()`, `is_sctp()`, `is_secure()`
+  and `is_avpf()`.
+- `Rid` (`a=rid`) attribute and `RidDirection` enum (RFC 8851).
+- `KeyMgmt` (`a=key-mgmt`) attribute and `KeyMgmtMethod` enum (RFC 4567).
+- `RemoteCandidates` (`a=remote-candidates`) attribute and `RemoteCandidate`
+  (RFC 5245, RFC 8839).
+- `Connection::try_parse_ttl()`, `Connection::try_parse_number_of_addresses()`
+  and `Connection::is_multicast()`.
+- `Rtcp::try_parse_ttl()`, `Rtcp::try_parse_number_of_addresses()` and
+  `Rtcp::is_multicast()`.
+- `SourceFilter` (`a=source-filter`) attribute with `SourceFilterMode`,
+  `SourceFilterAddrType`, `SourceFilterDestination` and `SourceFilterAddress`
+  (RFC 4570).
+
+### Changed
+- `Connection::try_parse_connection_ip_address()` now ignores an optional
+  time-to-live suffix in `address/ttl` notation (RFC 8866, section 5.7)
+  instead of failing to parse the address.
+- `Rtcp::try_parse_connection_ip_address()` now ignores an optional
+  time-to-live suffix in `address/ttl` notation (RFC 8866, section 5.7)
+  instead of failing to parse the address.
 
 ## [0.3.0]
 ### Fixed

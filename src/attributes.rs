@@ -11,7 +11,10 @@ use std::{
     str::FromStr,
 };
 
-use crate::{builders, enums::*, parser::is_token, Attribute};
+use crate::{
+    builders, enums::*, parse_connection_ip_address, parse_number_of_addresses, parse_ttl,
+    parser::is_token, Attribute,
+};
 
 /// Trait for Typed Attribute structs
 pub trait TypedAttribute: Display + FromStr<Err = AttributeError> {
@@ -455,12 +458,75 @@ impl Rtcp {
 
     /// Tries to parse the `connection_address` `String` of `self` as `IpAddr`
     ///
+    /// An optional time-to-live suffix in `address/ttl` notation
+    /// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7))
+    /// is ignored, see [`Rtcp::try_parse_ttl`].
+    ///
     /// Returns `None` if the address part is absent, the `Ok` with the parsed
     /// `IpAddr` or `Err` with the string address if parsing failed.
     pub fn try_parse_connection_ip_address(&self) -> Option<Result<IpAddr, &str>> {
         self.connection_address
             .as_deref()
-            .map(|address| address.parse::<IpAddr>().map_err(|_| address))
+            .map(parse_connection_ip_address)
+    }
+
+    /// The effective `addrtype` of the `connection_address`
+    ///
+    /// The `addrtype` field, or the address family inferred from the parsed
+    /// `IpAddr` if the field is `None`. `None` if the address part is absent
+    /// or its address family cannot be determined.
+    fn effective_addrtype(&self) -> Option<AddrType> {
+        self.addrtype.clone().or_else(|| {
+            let address = self.try_parse_connection_ip_address()?.ok()?;
+            Some(address.into())
+        })
+    }
+
+    /// Tries to parse the multicast time-to-live of the `connection_address`
+    ///
+    /// The `connection_address` of `a=rtcp` reuses the SDP connection
+    /// address token, so a multicast address may carry a time-to-live
+    /// written after the address and separated by a `/`, e.g.
+    /// `"224.2.1.1/16"`, optionally followed by a number-of-addresses count,
+    /// e.g. `"224.2.1.1/16/3"`
+    /// ([RFC 3605 Section 2](https://datatracker.ietf.org/doc/html/rfc3605#section-2),
+    /// [RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+    ///
+    /// TTL is only defined for "IP4", an "IP6" suffix is always an address
+    /// count, so this returns `None` for "IP6". Returns `Some` only if the
+    /// address has a TTL suffix, with `Ok` for a parsed TTL or `Err` with the
+    /// suffix string if parsing failed. Also returns `None` if the address
+    /// part is absent or its address family cannot be determined.
+    pub fn try_parse_ttl(&self) -> Option<Result<u8, &str>> {
+        let address = self.connection_address.as_deref()?;
+        parse_ttl(address, &self.effective_addrtype()?)
+    }
+
+    /// Tries to parse the number of addresses of the `connection_address`
+    ///
+    /// A multicast connection address may be followed by the number of
+    /// subsequent group addresses used for layered/multigroup sessions, e.g.
+    /// `"233.252.0.1/127/3"` for "IP4" or `"ff00::db8:0:101/3"` for "IP6"
+    /// ([RFC 3605 Section 2](https://datatracker.ietf.org/doc/html/rfc3605#section-2),
+    /// [RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+    ///
+    /// For "IP4" this is the second suffix after the TTL, for "IP6" the
+    /// first and only one. Returns `Some` only if the address has such a
+    /// suffix, with `Ok` for a parsed count or `Err` with the suffix string
+    /// if parsing failed. Also returns `None` if the address part is absent
+    /// or its address family cannot be determined.
+    pub fn try_parse_number_of_addresses(&self) -> Option<Result<u8, &str>> {
+        let address = self.connection_address.as_deref()?;
+        parse_number_of_addresses(address, &self.effective_addrtype()?)
+    }
+
+    /// Whether the `connection_address` is an IP multicast address
+    ///
+    /// Returns `false` if the address part is absent or cannot be parsed as
+    /// an [`IpAddr`].
+    pub fn is_multicast(&self) -> bool {
+        matches!(self.try_parse_connection_ip_address(),
+            Some(Ok(address)) if address.is_multicast())
     }
 
     /// Sets the `connection_address` & `addrtype` of `self` from the specified `IpAddr`
@@ -2260,6 +2326,719 @@ impl TypedAttribute for Candidate {
     const NAME: &'static str = "candidate";
 }
 
+/// Restricted identification line (`a=rid`) attribute
+///
+/// Represents the send/recv restriction that defines a unique RTP payload
+/// configuration, see
+/// [RFC 8851 Section 4](https://datatracker.ietf.org/doc/html/rfc8851#section-4).
+/// Restriction parameters (`pt=`, `max-width=`, `max-br=`, ...) are kept as raw
+/// `name[=value]` tokens, in order, without interpretation. The optional `pt=`
+/// payload format list is the first parameter when present.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Rid {
+    /// The restriction identifier, referenced by `a=extmap` and SDES items.
+    pub id: String,
+    /// Whether the restriction applies to a `send` or `recv` stream.
+    pub direction: RidDirection,
+    /// Restriction parameters, e.g. `pt=99,102` or `max-br=64000`.
+    pub params: Vec<String>,
+}
+
+impl Rid {
+    pub fn new(id: impl ToString, direction: RidDirection) -> Self {
+        Rid {
+            id: id.to_string(),
+            direction,
+            params: Vec::new(),
+        }
+    }
+
+    pub fn add_param(&mut self, param: impl ToString) {
+        self.params.push(param.to_string());
+    }
+
+    pub fn with_params(
+        id: impl ToString,
+        direction: RidDirection,
+        params: impl IntoIterator<Item = impl ToString>,
+    ) -> Self {
+        Rid {
+            id: id.to_string(),
+            direction,
+            params: params.into_iter().map(|p| p.to_string()).collect(),
+        }
+    }
+}
+
+impl FromStr for Rid {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <Self as TypedAttribute>::NAME.to_string();
+        let (id, rest) = s
+            .split_once(' ')
+            .ok_or_else(|| AttributeError::ParamNotFound {
+                param: "Direction".to_string(),
+                attr: attr.clone(),
+            })?;
+
+        let id = id.trim();
+        if id.is_empty() {
+            return Err(AttributeError::ParamNotFound {
+                param: "ID".to_string(),
+                attr,
+            });
+        }
+
+        // The direction is optionally followed by a single space and the
+        // restriction parameter list.
+        let (direction_str, params_str) = match rest.trim().split_once(' ') {
+            Some((d, p)) => (d, p),
+            None => (rest.trim(), ""),
+        };
+
+        let direction = direction_str
+            .parse()
+            .map_err(|_| AttributeError::InvalidParamValue {
+                param: "Direction".to_string(),
+                val: direction_str.to_string(),
+                attr: attr.clone(),
+            })?;
+
+        let params = if params_str.trim().is_empty() {
+            Vec::new()
+        } else {
+            params_str
+                .trim()
+                .split(';')
+                .map(|p| p.trim())
+                .filter(|p| !p.is_empty())
+                .map(|p| {
+                    if p.contains(char::is_whitespace) {
+                        Err(AttributeError::InvalidParamValue {
+                            param: "Parameter".to_string(),
+                            val: p.to_string(),
+                            attr: attr.clone(),
+                        })
+                    } else {
+                        Ok(p.to_string())
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        Ok(Rid {
+            id: id.to_string(),
+            direction,
+            params,
+        })
+    }
+}
+
+impl Display for Rid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.id, self.direction)?;
+        if !self.params.is_empty() {
+            write!(f, " {}", self.params.join(";"))?;
+        }
+        Ok(())
+    }
+}
+
+impl TypedAttribute for Rid {
+    const NAME: &'static str = "rid";
+}
+
+/// Key management protocol of the [`KeyMgmt`] attribute.
+///
+/// The identifiers (KMPIDs) are case-sensitive, registered at IANA in the
+/// "SDP/RTSP key management protocol identifiers" subregistry
+/// ([RFC 4567 Section 9.3](https://datatracker.ietf.org/doc/html/rfc4567#section-9.3));
+/// `mikey` is the only value defined so far.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum KeyMgmtMethod {
+    /// Multimedia Internet KEYing ([RFC 3830](https://datatracker.ietf.org/doc/html/rfc3830)).
+    Mikey,
+    /// Any other, possibly unregistered method, kept verbatim.
+    Other(String),
+}
+
+impl From<&str> for KeyMgmtMethod {
+    fn from(s: &str) -> Self {
+        match s {
+            "mikey" => KeyMgmtMethod::Mikey,
+            other => KeyMgmtMethod::Other(other.to_string()),
+        }
+    }
+}
+
+impl std::str::FromStr for KeyMgmtMethod {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(s.into())
+    }
+}
+
+impl Display for KeyMgmtMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyMgmtMethod::Mikey => f.write_str("mikey"),
+            KeyMgmtMethod::Other(other) => f.write_str(other),
+        }
+    }
+}
+
+/// Key management attribute (`a=key-mgmt`) attribute
+///
+/// See [RFC 4567 Section 4.1](https://datatracker.ietf.org/doc/html/rfc4567#section-4.1).
+/// The key management data is kept verbatim; for the `mikey` method it is
+/// the base64-encoded MIKEY message (RFC 3830, RFC 4567 section 7).
+///
+/// Media-level `key-mgmt` attributes override session-level ones, which
+/// consumers have to resolve themselves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct KeyMgmt {
+    /// Key management protocol.
+    pub method: KeyMgmtMethod,
+    /// Key management data, if any.
+    pub data: Option<String>,
+}
+
+impl KeyMgmt {
+    pub fn new(method: KeyMgmtMethod) -> Self {
+        KeyMgmt { method, data: None }
+    }
+
+    pub fn with_data(method: KeyMgmtMethod, data: impl ToString) -> Self {
+        KeyMgmt {
+            method,
+            data: Some(data.to_string()),
+        }
+    }
+}
+
+impl FromStr for KeyMgmt {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if s.is_empty() {
+            return Err(AttributeError::ParamNotFound {
+                param: "Method".to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        let (method, data) = match s.split_once(char::is_whitespace) {
+            Some((method, data)) => (method, Some(data.trim().to_string())),
+            None => (s, None),
+        };
+
+        Ok(KeyMgmt {
+            method: method.into(),
+            data,
+        })
+    }
+}
+
+impl Display for KeyMgmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.data {
+            Some(data) => write!(f, "{} {}", self.method, data),
+            None => write!(f, "{}", self.method),
+        }
+    }
+}
+
+impl TypedAttribute for KeyMgmt {
+    const NAME: &'static str = "key-mgmt";
+}
+
+/// Remote candidate for one component of a data stream
+///
+/// A single entry of the [`RemoteCandidates`] attribute, in
+/// `component-id connection-address port` form
+/// ([RFC 8839 Section 5.2](https://datatracker.ietf.org/doc/html/rfc8839#section-5.2)).
+///
+/// The address must be an IP address: agents generating candidates MUST NOT
+/// use FQDNs and agents receiving them MUST ignore them
+/// ([RFC 8839 Section 5.1](https://datatracker.ietf.org/doc/html/rfc8839#section-5.1)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RemoteCandidate {
+    /// Component identifier of the data stream, 1 for RTP and 2 for RTCP.
+    pub component_id: u32,
+    /// Remote address (IPv4 or IPv6).
+    pub address: IpAddr,
+    /// Remote port.
+    pub port: u16,
+}
+
+impl RemoteCandidate {
+    pub fn new(component_id: u32, address: impl Into<IpAddr>, port: u16) -> Self {
+        RemoteCandidate {
+            component_id,
+            address: address.into(),
+            port,
+        }
+    }
+}
+
+impl FromStr for RemoteCandidate {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <RemoteCandidates as TypedAttribute>::NAME.to_string();
+        let mut parts = s.split_whitespace();
+
+        let component_id_token = parts.next().ok_or_else(|| AttributeError::ParamNotFound {
+            param: "Component ID".to_string(),
+            attr: attr.clone(),
+        })?;
+        let component_id =
+            component_id_token
+                .parse()
+                .map_err(|_| AttributeError::InvalidParamValue {
+                    param: "Component ID".to_string(),
+                    val: component_id_token.to_string(),
+                    attr: attr.clone(),
+                })?;
+
+        let address_token = parts.next().ok_or_else(|| AttributeError::ParamNotFound {
+            param: "Address".to_string(),
+            attr: attr.clone(),
+        })?;
+        let address = address_token
+            .parse()
+            .map_err(|_| AttributeError::InvalidParamValue {
+                param: "Address".to_string(),
+                val: address_token.to_string(),
+                attr: attr.clone(),
+            })?;
+
+        let port_token = parts.next().ok_or_else(|| AttributeError::ParamNotFound {
+            param: "Port".to_string(),
+            attr: attr.clone(),
+        })?;
+        let port = port_token
+            .parse()
+            .map_err(|_| AttributeError::InvalidParamValue {
+                param: "Port".to_string(),
+                val: port_token.to_string(),
+                attr: attr.clone(),
+            })?;
+
+        if let Some(val) = parts.next() {
+            return Err(AttributeError::UnexpectedTrailingItem {
+                val: val.to_string(),
+                attr,
+            });
+        }
+
+        Ok(RemoteCandidate {
+            component_id,
+            address,
+            port,
+        })
+    }
+}
+
+impl Display for RemoteCandidate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} {}", self.component_id, self.address, self.port)
+    }
+}
+
+/// Remote candidates attribute (`a=remote-candidates`)
+///
+/// Lists the remote ICE candidates corresponding to the nominated pair for
+/// each component of the data stream
+/// ([RFC 8839 Section 5.2](https://datatracker.ietf.org/doc/html/rfc8839#section-5.2)).
+/// The ordering of the components is irrelevant.
+///
+/// The grammar allows multiple entries in a single attribute; implementations
+/// also send one entry per `a=remote-candidates` line, which results in
+/// multiple attributes on the wire.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RemoteCandidates(pub Vec<RemoteCandidate>);
+
+impl RemoteCandidates {
+    pub fn new(candidates: impl IntoIterator<Item = RemoteCandidate>) -> Self {
+        RemoteCandidates(candidates.into_iter().collect())
+    }
+}
+
+impl FromStr for RemoteCandidates {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <Self as TypedAttribute>::NAME.to_string();
+        let mut tokens = s.split_whitespace();
+        let mut candidates = Vec::new();
+
+        // Every entry consists of exactly three tokens.
+        loop {
+            let triple: Vec<&str> = tokens.by_ref().take(3).collect();
+            match triple.len() {
+                0 => break,
+                1..=2 => {
+                    return Err(AttributeError::UnexpectedTrailingItem {
+                        val: triple.join(" "),
+                        attr,
+                    })
+                }
+                _ => candidates.push(triple.join(" ").parse()?),
+            }
+        }
+
+        if candidates.is_empty() {
+            return Err(AttributeError::ParamNotFound {
+                param: "Candidate".to_string(),
+                attr,
+            });
+        }
+
+        Ok(RemoteCandidates(candidates))
+    }
+}
+
+impl Display for RemoteCandidates {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, candidate) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_char(' ')?;
+            }
+            write!(f, "{}", candidate)?;
+        }
+        Ok(())
+    }
+}
+
+impl TypedAttribute for RemoteCandidates {
+    const NAME: &'static str = "remote-candidates";
+}
+
+/// Filter mode of the [`SourceFilter`] (`a=source-filter`) attribute.
+///
+/// See [RFC 4570 Section 4](https://datatracker.ietf.org/doc/html/rfc4570#section-4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SourceFilterMode {
+    /// Accept only packets sent by the listed sources.
+    Incl,
+    /// Reject packets sent by the listed sources.
+    Excl,
+}
+
+impl SourceFilterMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SourceFilterMode::Incl => "incl",
+            SourceFilterMode::Excl => "excl",
+        }
+    }
+}
+
+impl FromStr for SourceFilterMode {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if "incl".eq_ignore_ascii_case(s) {
+            Ok(SourceFilterMode::Incl)
+        } else if "excl".eq_ignore_ascii_case(s) {
+            Ok(SourceFilterMode::Excl)
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl Display for SourceFilterMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Address type of the entries of the [`SourceFilter`] (`a=source-filter`)
+/// attribute.
+///
+/// Models the `address-types` production, which extends the SDP `addrtype`
+/// token with a `*` wildcard for FQDNs
+/// ([RFC 4570 Appendix A](https://datatracker.ietf.org/doc/html/rfc4570#appendix-A)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SourceFilterAddrType {
+    /// Any address family, only allowed with FQDN destinations.
+    Star,
+    /// IPv4 address
+    Ip4,
+    /// IPv6 address
+    Ip6,
+}
+
+impl SourceFilterAddrType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SourceFilterAddrType::Star => "*",
+            SourceFilterAddrType::Ip4 => "IP4",
+            SourceFilterAddrType::Ip6 => "IP6",
+        }
+    }
+}
+
+impl FromStr for SourceFilterAddrType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "*" {
+            Ok(SourceFilterAddrType::Star)
+        } else if "IP4".eq_ignore_ascii_case(s) {
+            Ok(SourceFilterAddrType::Ip4)
+        } else if "IP6".eq_ignore_ascii_case(s) {
+            Ok(SourceFilterAddrType::Ip6)
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl Display for SourceFilterAddrType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Address of the [`SourceFilter`] (`a=source-filter`) attribute
+///
+/// Models the `unicast-address` and `basic-multicast-address` productions:
+/// an IP address or an FQDN, but without the `/ttl` and `/number of
+/// addresses` suffixes that a connection address may carry
+/// ([RFC 4570 Appendix A](https://datatracker.ietf.org/doc/html/rfc4570#appendix-A)).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SourceFilterAddress {
+    /// IP address
+    IpAddr(IpAddr),
+    /// Fully qualified domain name
+    FQDN(String),
+}
+
+impl From<&str> for SourceFilterAddress {
+    fn from(s: &str) -> Self {
+        match s.parse::<IpAddr>() {
+            Ok(address) => SourceFilterAddress::IpAddr(address),
+            Err(_) => SourceFilterAddress::FQDN(s.to_string()),
+        }
+    }
+}
+
+impl FromStr for SourceFilterAddress {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(s.into())
+    }
+}
+
+impl Display for SourceFilterAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceFilterAddress::IpAddr(address) => write!(f, "{}", address),
+            SourceFilterAddress::FQDN(domain) => f.write_str(domain),
+        }
+    }
+}
+
+/// Destination of the [`SourceFilter`] (`a=source-filter`) attribute
+///
+/// Models the `dest-address` production
+/// ([RFC 4570 Appendix A](https://datatracker.ietf.org/doc/html/rfc4570#appendix-A)).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SourceFilterDestination {
+    /// The `"*"` wildcard, matching all of the session's connection addresses
+    Wildcard,
+    /// Unicast, multicast address or FQDN
+    Address(SourceFilterAddress),
+}
+
+impl FromStr for SourceFilterDestination {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "*" {
+            Ok(SourceFilterDestination::Wildcard)
+        } else {
+            Ok(SourceFilterDestination::Address(s.into()))
+        }
+    }
+}
+
+impl Display for SourceFilterDestination {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceFilterDestination::Wildcard => f.write_str("*"),
+            SourceFilterDestination::Address(address) => write!(f, "{}", address),
+        }
+    }
+}
+
+/// Source filter attribute (`a=source-filter`)
+///
+/// Restricts the set of source addresses accepted for a destination
+/// address, e.g. for source-specific multicast.
+///
+/// See [RFC 4570 Section 4](https://datatracker.ietf.org/doc/html/rfc4570#section-4).
+/// The destination must be one of the session's connection addresses or the
+/// `"*"` wildcard; unlike a connection address it never carries the `/ttl`
+/// and `/number of addresses` suffixes (RFC 4570, section 3.1).
+///
+/// Media-level source filters completely override session-level ones, which
+/// consumers have to resolve themselves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SourceFilter {
+    /// Inclusion or exclusion filter mode.
+    pub mode: SourceFilterMode,
+    /// Network type, usually [`NetType::In`].
+    pub nettype: NetType,
+    /// Address family of the destination and source addresses.
+    pub addrtype: SourceFilterAddrType,
+    /// Destination address or the `"*"` wildcard.
+    pub destination: SourceFilterDestination,
+    /// Source addresses, at least one entry.
+    pub sources: Vec<SourceFilterAddress>,
+}
+
+impl FromStr for SourceFilter {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <Self as TypedAttribute>::NAME.to_string();
+
+        // Runs of spaces are a single separator, like in c= lines,
+        // so that no field can end up empty.
+        let mut i = s.split(' ').filter(|part| !part.is_empty());
+
+        let Some(mode) = i.next() else {
+            return Err(AttributeError::ParamNotFound {
+                param: "Filter mode".to_string(),
+                attr,
+            });
+        };
+        let mode = mode
+            .parse()
+            .map_err(|_| AttributeError::InvalidParamValue {
+                param: "Filter mode".to_string(),
+                val: mode.to_string(),
+                attr: attr.clone(),
+            })?;
+
+        let Some(nettype) = i.next() else {
+            return Err(AttributeError::ParamNotFound {
+                param: "Network type".to_string(),
+                attr,
+            });
+        };
+        // RFC 4570 reuses the SDP nettype token (RFC 8866, section 9).
+        let nettype = NetType::from_str(nettype).expect("infallible");
+
+        let Some(addrtype) = i.next() else {
+            return Err(AttributeError::ParamNotFound {
+                param: "Address types".to_string(),
+                attr,
+            });
+        };
+        let addrtype = addrtype
+            .parse()
+            .map_err(|_| AttributeError::InvalidParamValue {
+                param: "Address types".to_string(),
+                val: addrtype.to_string(),
+                attr: attr.clone(),
+            })?;
+
+        let Some(destination) = i.next() else {
+            return Err(AttributeError::ParamNotFound {
+                param: "Destination address".to_string(),
+                attr,
+            });
+        };
+
+        // RFC 4570, section 3.1: a multicast destination MUST NOT include
+        // the /ttl and /number of addresses sub-fields.
+        if destination.contains('/') {
+            return Err(AttributeError::InvalidParamValue {
+                param: "Destination address".to_string(),
+                val: destination.to_string(),
+                attr,
+            });
+        }
+        let destination = SourceFilterDestination::from_str(destination).expect("infallible");
+        // RFC 4570, section 3.1: the "*" address type MUST only be used with
+        // FQDN destinations.
+        if addrtype == SourceFilterAddrType::Star
+            && matches!(
+                destination,
+                SourceFilterDestination::Address(SourceFilterAddress::IpAddr(_))
+            )
+        {
+            return Err(AttributeError::InvalidParamValue {
+                param: "Destination address".to_string(),
+                val: destination.to_string(),
+                attr,
+            });
+        }
+
+        let sources: Vec<&str> = i.collect();
+        if sources.is_empty() {
+            return Err(AttributeError::ParamNotFound {
+                param: "Source list".to_string(),
+                attr,
+            });
+        }
+        // RFC 4570, section 3.1: only the destination allows the "*" wildcard.
+        if let Some(source) = sources.iter().find(|source| source == &&"*") {
+            return Err(AttributeError::InvalidParamValue {
+                param: "Source address".to_string(),
+                val: source.to_string(),
+                attr,
+            });
+        }
+        let sources = sources.into_iter().map(SourceFilterAddress::from).collect();
+
+        Ok(SourceFilter {
+            mode,
+            nettype,
+            addrtype,
+            destination,
+            sources,
+        })
+    }
+}
+
+impl Display for SourceFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} {} {}",
+            self.mode, self.nettype, self.addrtype, self.destination
+        )?;
+        for source in &self.sources {
+            write!(f, " {}", source)?;
+        }
+        Ok(())
+    }
+}
+
+impl TypedAttribute for SourceFilter {
+    const NAME: &'static str = "source-filter";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -2893,14 +3672,15 @@ a=rtcp:53020\r
         let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
         assert_eq!(rtcp.addrtype, Some(AddrType::Ip4));
         assert_eq!(rtcp.connection_address.as_deref(), Some("127.0.0.0/24"));
+        // The `/24` suffix is parsed as the TTL of RFC 8866 multicast
+        // notation, not as part of the address, see [`Rtcp::try_parse_ttl`].
         assert_eq!(
-            &rtcp
-                .try_parse_connection_ip_address()
-                .unwrap()
-                .expect_err("IPv4 with mask")
-                .to_string(),
-            "127.0.0.0/24"
+            rtcp.try_parse_connection_ip_address().unwrap().unwrap(),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)),
         );
+        assert_eq!(rtcp.try_parse_ttl(), Some(Ok(24)));
+        assert_eq!(rtcp.try_parse_number_of_addresses(), None);
+        assert!(!rtcp.is_multicast());
 
         let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
         assert_eq!(rtcp.addrtype, Some(AddrType::Ip6));
@@ -2925,7 +3705,44 @@ a=rtcp:53020\r
         assert_eq!(rtcp.addrtype, None);
         assert_eq!(rtcp.connection_address, None);
         assert_eq!(rtcp.try_parse_connection_ip_address(), None);
+        assert_eq!(rtcp.try_parse_ttl(), None);
+        assert_eq!(rtcp.try_parse_number_of_addresses(), None);
+        assert!(!rtcp.is_multicast());
         assert_eq!(rtcp.to_string(), "53020");
+    }
+
+    #[test]
+    fn rtcp_multicast_address_helpers() {
+        // RFC 3605: a=rtcp reuses the SDP connection-address token, so the
+        // multicast `address/ttl[/count]` notation of RFC 8866, section 5.7
+        // may also be used here. The suffix parsing itself is covered by
+        // `connection_ttl_notation`, here only its use through `a=rtcp`.
+        let parse = |v: &str| v.parse::<Rtcp>().unwrap();
+
+        let rtcp = parse("5000 IN IP4 233.252.0.1/127/3");
+        assert!(rtcp.is_multicast());
+        assert_eq!(
+            rtcp.try_parse_connection_ip_address().unwrap().unwrap(),
+            IpAddr::V4(Ipv4Addr::new(233, 252, 0, 1)),
+        );
+        assert_eq!(rtcp.try_parse_ttl(), Some(Ok(127)));
+        assert_eq!(rtcp.try_parse_number_of_addresses(), Some(Ok(3)));
+
+        // IPv6 multicast: the only suffix is the number of addresses, no TTL.
+        let rtcp = parse("5000 IN IP6 ff12::5/3");
+        assert!(rtcp.is_multicast());
+        assert_eq!(rtcp.try_parse_ttl(), None);
+        assert_eq!(rtcp.try_parse_number_of_addresses(), Some(Ok(3)));
+
+        // Manually constructed without `addrtype`: inferred from the address.
+        let mut rtcp = Rtcp::with_port(5000);
+        rtcp.connection_address = Some("224.2.1.1/16".to_string());
+        assert_eq!(rtcp.try_parse_ttl(), Some(Ok(16)));
+        assert_eq!(rtcp.try_parse_number_of_addresses(), None);
+        let mut rtcp = Rtcp::with_port(5000);
+        rtcp.connection_address = Some("ff12::5/3".to_string());
+        assert_eq!(rtcp.try_parse_ttl(), None);
+        assert_eq!(rtcp.try_parse_number_of_addresses(), Some(Ok(3)));
     }
 
     #[test]
@@ -2967,5 +3784,240 @@ a=rtcp:53020\r
                 attr: "rtcp".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn parse_rid_attribute() {
+        // RFC 8851 examples.
+        let rid: Rid = "5 send pt=99,102;max-br=64000".parse().unwrap();
+        assert_eq!(
+            rid,
+            Rid::with_params("5", RidDirection::Send, ["pt=99,102", "max-br=64000"])
+        );
+        assert_eq!(rid.to_string(), "5 send pt=99,102;max-br=64000");
+
+        let rid: Rid = "6 send pt=100,97,101,102".parse().unwrap();
+        assert_eq!(
+            rid,
+            Rid::with_params("6", RidDirection::Send, ["pt=100,97,101,102"])
+        );
+
+        let rid: Rid = "f recv max-br=19.5;apt=100".parse().unwrap();
+        assert_eq!(
+            rid,
+            Rid::with_params("f", RidDirection::Recv, ["max-br=19.5", "apt=100"])
+        );
+        assert_eq!(rid.to_string(), "f recv max-br=19.5;apt=100");
+
+        // Without parameters, and with a valueless parameter.
+        let rid: Rid = "1 recv".parse().unwrap();
+        assert_eq!(rid.direction, RidDirection::Recv);
+        assert!(rid.params.is_empty());
+        assert_eq!(rid.to_string(), "1 recv");
+        assert_eq!(
+            "2 send max-width".parse::<Rid>().unwrap(),
+            Rid::with_params("2", RidDirection::Send, ["max-width"])
+        );
+
+        // Trailing separators are tolerated, direction is case-insensitive.
+        assert_eq!(
+            "2 SEND pt=99;".parse::<Rid>().unwrap(),
+            Rid::with_params("2", RidDirection::Send, ["pt=99"])
+        );
+
+        for invalid in [
+            "",
+            "1",
+            " send",
+            "1 up",
+            "1 send x y",
+            "1 send pt=1;max br=2",
+        ] {
+            assert!(
+                invalid.parse::<Rid>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
+    }
+
+    #[test]
+    fn parse_key_mgmt_attribute() {
+        let key_mgmt: KeyMgmt = "mikey AAAAIklkAAAAdGV4dHRleHR0ZXh0".parse().unwrap();
+        assert_eq!(
+            key_mgmt,
+            KeyMgmt::with_data(KeyMgmtMethod::Mikey, "AAAAIklkAAAAdGV4dHRleHR0ZXh0")
+        );
+        assert_eq!(key_mgmt.to_string(), "mikey AAAAIklkAAAAdGV4dHRleHR0ZXh0");
+
+        // Unknown methods are kept verbatim; KMPIDs are case-sensitive
+        // (RFC 4567 section 3), so `MIKEY` is not the `mikey` method.
+        for method in ["rawurl", "MIKEY", "internal"] {
+            let key_mgmt: KeyMgmt = format!("{} data", method).parse().unwrap();
+            assert_eq!(key_mgmt.method, KeyMgmtMethod::Other(method.to_string()));
+            assert_eq!(key_mgmt.data.as_deref(), Some("data"));
+            assert_eq!(key_mgmt.to_string(), format!("{} data", method));
+        }
+
+        // Method without data.
+        let key_mgmt: KeyMgmt = "internal".parse().unwrap();
+        assert_eq!(
+            key_mgmt,
+            KeyMgmt::new(KeyMgmtMethod::Other("internal".to_string()))
+        );
+        assert_eq!(key_mgmt.to_string(), "internal");
+
+        // Data is kept verbatim, including inner whitespace.
+        let key_mgmt: KeyMgmt = "mikey bar  baz".parse().unwrap();
+        assert_eq!(key_mgmt.data.as_deref(), Some("bar  baz"));
+        assert_eq!(key_mgmt.to_string(), "mikey bar  baz");
+
+        assert!("".parse::<KeyMgmt>().is_err());
+        assert!("   ".parse::<KeyMgmt>().is_err());
+    }
+
+    #[test]
+    fn parse_remote_candidate_attribute() {
+        let candidates: RemoteCandidates = "1 192.168.1.1 50000".parse().unwrap();
+        assert_eq!(
+            candidates,
+            RemoteCandidates::new([RemoteCandidate::new(
+                1,
+                "192.168.1.1".parse::<IpAddr>().unwrap(),
+                50000
+            )])
+        );
+        assert_eq!(candidates.to_string(), "1 192.168.1.1 50000");
+
+        // Multiple entries in a single attribute (RFC 8839, section 5.2).
+        let candidates: RemoteCandidates = "1 192.0.2.3 45664 2 192.0.2.3 45665".parse().unwrap();
+        assert_eq!(candidates.0.len(), 2);
+        assert_eq!(candidates.0[1].component_id, 2);
+        assert_eq!(
+            candidates.to_string(),
+            "1 192.0.2.3 45664 2 192.0.2.3 45665"
+        );
+
+        // IPv6 and the value parsed on its own.
+        let candidate: RemoteCandidate = "1 2001:db8::1 9".parse().unwrap();
+        assert_eq!(candidate.address, "2001:db8::1".parse::<IpAddr>().unwrap());
+        assert_eq!(candidate.to_string(), "1 2001:db8::1 9");
+
+        for invalid in [
+            "",
+            "1",
+            "1 10.0.0.1",
+            "x 10.0.0.1 50000",
+            "1 x 50000",
+            // FQDNs must not be used (RFC 8839, section 5.1).
+            "1 example.com 50000",
+            "1 10.0.0.1 70000",
+            "1 10.0.0.1 50000 2",
+        ] {
+            assert!(
+                invalid.parse::<RemoteCandidates>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
+    }
+
+    #[test]
+    fn parse_source_filter_attribute() {
+        // RFC 4570, section 3.2 examples.
+        let filter: SourceFilter = "incl IN IP4 232.3.4.5 192.0.2.10".parse().unwrap();
+        assert_eq!(filter.mode, SourceFilterMode::Incl);
+        assert_eq!(filter.nettype, NetType::In);
+        assert_eq!(filter.addrtype, SourceFilterAddrType::Ip4);
+        assert_eq!(
+            filter.destination,
+            SourceFilterDestination::Address(SourceFilterAddress::IpAddr(
+                "232.3.4.5".parse().unwrap()
+            ))
+        );
+        assert_eq!(
+            filter.sources,
+            ["192.0.2.10".parse::<SourceFilterAddress>().unwrap()]
+        );
+        assert_eq!(filter.to_string(), "incl IN IP4 232.3.4.5 192.0.2.10");
+
+        // Unicast destination.
+        let filter: SourceFilter = "excl IN IP4 192.0.2.11 192.0.2.10".parse().unwrap();
+        assert_eq!(filter.mode, SourceFilterMode::Excl);
+        assert_eq!(filter.to_string(), "excl IN IP4 192.0.2.11 192.0.2.10");
+
+        // Destination wildcard.
+        let filter: SourceFilter = "incl IN IP4 * 192.0.2.10".parse().unwrap();
+        assert_eq!(filter.destination, SourceFilterDestination::Wildcard);
+        assert_eq!(filter.to_string(), "incl IN IP4 * 192.0.2.10");
+
+        // Multiple space-separated sources.
+        let filter: SourceFilter = "incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.42"
+            .parse()
+            .unwrap();
+        assert_eq!(filter.sources.len(), 2);
+        assert_eq!(
+            filter.to_string(),
+            "incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.42"
+        );
+
+        // IPv6.
+        let filter: SourceFilter = "incl IN IP6 ff0e::11a 2001:db8::1".parse().unwrap();
+        assert_eq!(filter.addrtype, SourceFilterAddrType::Ip6);
+        assert_eq!(
+            filter.destination,
+            SourceFilterDestination::Address(SourceFilterAddress::IpAddr(
+                "ff0e::11a".parse().unwrap()
+            ))
+        );
+        assert_eq!(filter.to_string(), "incl IN IP6 ff0e::11a 2001:db8::1");
+
+        // FQDNs with the "*" address type.
+        let filter: SourceFilter = "incl IN * channel-1.example.com src-1.example.com"
+            .parse()
+            .unwrap();
+        assert_eq!(filter.addrtype, SourceFilterAddrType::Star);
+        assert_eq!(
+            filter.destination,
+            SourceFilterDestination::Address(SourceFilterAddress::FQDN(
+                "channel-1.example.com".to_string()
+            ))
+        );
+        assert_eq!(
+            filter.sources,
+            [SourceFilterAddress::FQDN("src-1.example.com".to_string())]
+        );
+        assert_eq!(
+            filter.to_string(),
+            "incl IN * channel-1.example.com src-1.example.com"
+        );
+
+        // Filter mode and address type matching is case-insensitive.
+        let filter: SourceFilter = "EXCL IN ip6 ff0e::11a 2001:db8::1".parse().unwrap();
+        assert_eq!(filter.mode, SourceFilterMode::Excl);
+        assert_eq!(filter.addrtype, SourceFilterAddrType::Ip6);
+
+        for invalid in [
+            "",
+            "incl",
+            "incl IN",
+            "incl IN IP4",
+            "incl IN IP4 232.3.4.5",
+            // No /ttl or /number of addresses suffixes on the destination
+            // (RFC 4570 section 3.1):
+            "incl IN IP4 232.3.4.5/127 192.0.2.10",
+            // The "*" address type only with FQDN destinations (section 3.1):
+            "incl IN * 232.3.4.5 192.0.2.10",
+            // The "*" wildcard is not allowed in the source list (appendix A):
+            "incl IN IP4 232.3.4.5 *",
+            "unknown IN IP4 232.3.4.5 192.0.2.10",
+            "incl IN IP8 232.3.4.5 192.0.2.10",
+        ] {
+            assert!(
+                invalid.parse::<SourceFilter>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
     }
 }
