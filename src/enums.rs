@@ -461,6 +461,49 @@ impl Display for TransportProto {
     }
 }
 
+/// Direction of a restricted RTP stream
+///
+/// See [RFC 8851 Section 4](https://datatracker.ietf.org/doc/html/rfc8851#section-4)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum RidDirection {
+    /// Sender-side restriction
+    Send,
+    /// Receiver-side restriction
+    Recv,
+}
+
+impl RidDirection {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RidDirection::Send => "send",
+            RidDirection::Recv => "recv",
+        }
+    }
+}
+
+impl FromStr for RidDirection {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // The grammar (RFC 8851, section 10) is case-sensitive; parsing is
+        // case-insensitive like everywhere else in this crate.
+        if s.eq_ignore_ascii_case("send") {
+            Ok(RidDirection::Send)
+        } else if s.eq_ignore_ascii_case("recv") {
+            Ok(RidDirection::Recv)
+        } else {
+            Err(ParseEnumError::Invalid(s.to_string()))
+        }
+    }
+}
+
+impl std::fmt::Display for RidDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Secure Hash functions
 ///
 /// See [RFC 8122 Table 1](https://datatracker.ietf.org/doc/html/rfc8122#section-8)
@@ -1112,10 +1155,10 @@ mod tests {
         ];
 
         for (proto, rtp, sctp, secure, avpf) in cases {
-            assert_eq!(proto.is_rtp(), rtp, "{proto:?} is_rtp");
-            assert_eq!(proto.is_sctp(), sctp, "{proto:?} is_sctp");
-            assert_eq!(proto.is_secure(), secure, "{proto:?} is_secure");
-            assert_eq!(proto.is_avpf(), avpf, "{proto:?} is_avpf");
+            assert_eq!(proto.is_rtp(), rtp, "{:?} is_rtp", proto);
+            assert_eq!(proto.is_sctp(), sctp, "{:?} is_sctp", proto);
+            assert_eq!(proto.is_secure(), secure, "{:?} is_secure", proto);
+            assert_eq!(proto.is_avpf(), avpf, "{:?} is_avpf", proto);
         }
     }
 }
