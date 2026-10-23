@@ -382,6 +382,34 @@ impl TransportProto {
             TransportProto::Other(proto) => proto.as_str(),
         }
     }
+
+    /// Whether this is an RTP transport (any of the `RTP/...` profiles).
+    ///
+    /// Profile strings are classified by their RTP profile component
+    /// (RFC 8866, section 5.7), so unregistered profiles containing it (e.g.
+    /// the legacy `RTP/AVP/TCP`) are also detected. Returns `false` for SCTP
+    /// transports and [`TransportProto::Udp`].
+    pub fn is_rtp(&self) -> bool {
+        let proto = self.as_str();
+        proto.starts_with("RTP/") || proto.contains("/RTP/")
+    }
+
+    /// Whether this is an SCTP transport (used for datachannels).
+    pub fn is_sctp(&self) -> bool {
+        self.as_str().ends_with("/SCTP")
+    }
+
+    /// Whether this is an RTP transport secured with SRTP (the `SAVP`
+    /// profiles).
+    pub fn is_secure(&self) -> bool {
+        self.is_rtp() && self.as_str().contains("SAVP")
+    }
+
+    /// Whether this RTP transport includes the RTP feedback (`F`) profile
+    /// extension, i.e. it supports per-PT `a=rtcp-fb` attributes.
+    pub fn is_avpf(&self) -> bool {
+        self.is_rtp() && self.as_str().ends_with("AVPF")
+    }
 }
 
 impl FromStr for TransportProto {
@@ -1024,4 +1052,70 @@ impl From<u8> for RtcpFbPt {
 pub enum CandidateAddress {
     IpAddr(std::net::IpAddr),
     FQDN(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transport_proto_classification() {
+        let cases = [
+            // (proto, is_rtp, is_sctp, is_secure, is_avpf)
+            (TransportProto::Udp, false, false, false, false),
+            (TransportProto::RtpAvp, true, false, false, false),
+            (TransportProto::RtpAvpf, true, false, false, true),
+            (TransportProto::RtpSavp, true, false, true, false),
+            (TransportProto::RtpSavpf, true, false, true, true),
+            (TransportProto::TcpDtlsRtpSavp, true, false, true, false),
+            (TransportProto::TcpDtlsRtpSavpf, true, false, true, true),
+            (TransportProto::UdpTlsRtpSavp, true, false, true, false),
+            (TransportProto::UdpTlsRtpSavpf, true, false, true, true),
+            (TransportProto::UdpDtlsSctp, false, true, false, false),
+            (TransportProto::TcpDtlsSctp, false, true, false, false),
+            (TransportProto::DtlsSctp, false, true, false, false),
+            (
+                TransportProto::Other("FOO".into()),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                TransportProto::Other("RTP/AV".into()),
+                true,
+                false,
+                false,
+                false,
+            ),
+            (
+                TransportProto::Other("RTP/AVP/TCP".into()),
+                true,
+                false,
+                false,
+                false,
+            ),
+            (
+                TransportProto::Other("UDP/TLS/RTP/SAVPF".into()),
+                true,
+                false,
+                true,
+                true,
+            ),
+            (
+                TransportProto::Other("AVPF".into()),
+                false,
+                false,
+                false,
+                false,
+            ),
+        ];
+
+        for (proto, rtp, sctp, secure, avpf) in cases {
+            assert_eq!(proto.is_rtp(), rtp, "{proto:?} is_rtp");
+            assert_eq!(proto.is_sctp(), sctp, "{proto:?} is_sctp");
+            assert_eq!(proto.is_secure(), secure, "{proto:?} is_secure");
+            assert_eq!(proto.is_avpf(), avpf, "{proto:?} is_avpf");
+        }
+    }
 }

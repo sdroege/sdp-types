@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
 ## [Unreleased]
+### Added
+- `TransportProto`: Classification helpers `is_rtp()`, `is_sctp()`, `is_secure()`
+  and `is_avpf()`.
 
 ## [0.3.0]
 ### Fixed
