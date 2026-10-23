@@ -286,28 +286,7 @@ impl Connection {
     /// Returns the parsed [`ConnectionAddress`] or a [`ConnectionAddressError`]
     /// for the first invalid component.
     pub fn try_address(&self) -> Result<ConnectionAddress, ConnectionAddressError> {
-        let ip = parse_connection_ip_address(&self.connection_address)
-            .map_err(|_| ConnectionAddressError::InvalidAddress(self.connection_address.clone()))?;
-        let ttl = match parse_ttl(&self.connection_address, &self.addrtype) {
-            Some(Ok(ttl)) => Some(ttl),
-            Some(Err(_)) => {
-                return Err(ConnectionAddressError::InvalidTtl(
-                    self.connection_address.clone(),
-                ));
-            }
-            None => None,
-        };
-        let count = match parse_number_of_addresses(&self.connection_address, &self.addrtype) {
-            Some(Ok(count)) => Some(count),
-            Some(Err(_)) => {
-                return Err(ConnectionAddressError::InvalidCount(
-                    self.connection_address.clone(),
-                ));
-            }
-            None => None,
-        };
-
-        Ok(ConnectionAddress { ip, ttl, count })
+        parse_connection_address(&self.connection_address, &self.addrtype)
     }
 
     /// Whether the `connection_address` is an IP multicast address
@@ -378,6 +357,28 @@ pub enum ConnectionAddressError {
     /// number, the `String` is the raw connection address.
     #[error("invalid address count in connection address '{0}'")]
     InvalidCount(String),
+}
+
+/// Parses an SDP connection address into its components
+/// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+pub(crate) fn parse_connection_address(
+    address: &str,
+    addrtype: &AddrType,
+) -> Result<ConnectionAddress, ConnectionAddressError> {
+    let ip = parse_connection_ip_address(address)
+        .map_err(|_| ConnectionAddressError::InvalidAddress(address.to_string()))?;
+    let ttl = match parse_ttl(address, addrtype) {
+        Some(Ok(ttl)) => Some(ttl),
+        Some(Err(_)) => return Err(ConnectionAddressError::InvalidTtl(address.to_string())),
+        None => None,
+    };
+    let count = match parse_number_of_addresses(address, addrtype) {
+        Some(Ok(count)) => Some(count),
+        Some(Err(_)) => return Err(ConnectionAddressError::InvalidCount(address.to_string())),
+        None => None,
+    };
+
+    Ok(ConnectionAddress { ip, ttl, count })
 }
 
 /// Tries to parse an SDP connection address as `IpAddr`, ignoring an

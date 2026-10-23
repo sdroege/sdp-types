@@ -20,16 +20,24 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 - `Connection::try_address()` with `ConnectionAddress` and
   `ConnectionAddressError`, parsing all components of a connection address
   (RFC 8866, section 5.7) at once.
+- `Rtcp::try_address()`, `Rtcp::is_multicast()`, `Rtcp::try_is_multicast()`,
+  `Rtcp::is_ipv4()` and `Rtcp::is_ipv6()`, mirroring the `Connection` helpers
+  for the `address/ttl[/count]` notation of the `a=rtcp` address (RFC 3605,
+  RFC 8866 section 5.7).
 
 ### Changed
 - `Connection::try_parse_connection_ip_address()` now ignores an optional
   time-to-live suffix in `address/ttl` notation (RFC 8866, section 5.7)
   instead of failing to parse the address.
+- `Rtcp::try_parse_connection_ip_address()` now ignores an optional
+  time-to-live suffix in `address/ttl` notation (RFC 8866, section 5.7)
+  instead of failing to parse the address.
 
 ### Deprecated
-- `Connection::try_parse_connection_ip_address()`, superseded by
-  `Connection::try_address()` which parses all components at once and
-  returns typed errors.
+- `Connection::try_parse_connection_ip_address()` and
+  `Rtcp::try_parse_connection_ip_address()`, superseded by
+  `Connection::try_address()` and `Rtcp::try_address()` which parse all
+  components at once and return typed errors.
 
 ## [0.3.0]
 ### Fixed
