@@ -257,13 +257,7 @@ impl Connection {
     /// Returns the `Ok` with the parsed `IpAddr` or `Err` with the string address
     /// if parsing failed.
     pub fn try_parse_connection_ip_address(&self) -> Result<IpAddr, &str> {
-        let address = match self.connection_address.split_once('/') {
-            Some((address, _)) => address,
-            None => self.connection_address.as_str(),
-        };
-        address
-            .parse::<IpAddr>()
-            .map_err(|_| self.connection_address.as_str())
+        parse_connection_ip_address(&self.connection_address)
     }
 
     /// Tries to parse the multicast time-to-live of the `connection_address`
@@ -281,16 +275,7 @@ impl Connection {
     /// Returns `Some` only if the address has a TTL suffix, with `Ok` for a
     /// parsed TTL or `Err` with the suffix string if parsing failed.
     pub fn try_parse_ttl(&self) -> Option<Result<u8, &str>> {
-        if self.addrtype != AddrType::Ip4 {
-            return None;
-        }
-
-        let rest = self.connection_address.split_once('/')?.1;
-        let ttl = match rest.split_once('/') {
-            Some((ttl, _count)) => ttl,
-            None => rest,
-        };
-        Some(ttl.parse::<u8>().map_err(|_| ttl))
+        parse_ttl(&self.connection_address, &self.addrtype)
     }
 
     /// Tries to parse the number of addresses of the `connection_address`
@@ -306,13 +291,7 @@ impl Connection {
     /// Returns `Some` only if the address has such a suffix, with `Ok` for a
     /// parsed count or `Err` with the suffix string if parsing failed.
     pub fn try_parse_number_of_addresses(&self) -> Option<Result<u8, &str>> {
-        let rest = self.connection_address.split_once('/')?.1;
-        let count = match self.addrtype {
-            AddrType::Ip4 => rest.split_once('/')?.1,
-            AddrType::Ip6 => rest,
-            AddrType::Other(_) => return None,
-        };
-        Some(count.parse::<u8>().map_err(|_| count))
+        parse_number_of_addresses(&self.connection_address, &self.addrtype)
     }
 
     /// Whether the `connection_address` is an IP multicast address
@@ -323,6 +302,49 @@ impl Connection {
             .map(|address| address.is_multicast())
             .unwrap_or(false)
     }
+}
+
+/// Tries to parse an SDP connection address as `IpAddr`, ignoring an
+/// optional `/ttl` and `/number of addresses` suffix
+/// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+///
+/// Returns `Err` with the original string if parsing failed.
+pub(crate) fn parse_connection_ip_address(address: &str) -> Result<IpAddr, &str> {
+    let ip_part = match address.split_once('/') {
+        Some((ip_part, _suffix)) => ip_part,
+        None => address,
+    };
+    ip_part.parse::<IpAddr>().map_err(|_| address)
+}
+
+/// Shared implementation of [`Connection::try_parse_ttl`] and
+/// [`Rtcp::try_parse_ttl`](attributes::Rtcp::try_parse_ttl).
+pub(crate) fn parse_ttl<'a>(address: &'a str, addrtype: &AddrType) -> Option<Result<u8, &'a str>> {
+    if addrtype != &AddrType::Ip4 {
+        return None;
+    }
+
+    let rest = address.split_once('/')?.1;
+    let ttl = match rest.split_once('/') {
+        Some((ttl, _count)) => ttl,
+        None => rest,
+    };
+    Some(ttl.parse::<u8>().map_err(|_| ttl))
+}
+
+/// Shared implementation of [`Connection::try_parse_number_of_addresses`]
+/// and [`Rtcp::try_parse_number_of_addresses`](attributes::Rtcp::try_parse_number_of_addresses).
+pub(crate) fn parse_number_of_addresses<'a>(
+    address: &'a str,
+    addrtype: &AddrType,
+) -> Option<Result<u8, &'a str>> {
+    let rest = address.split_once('/')?.1;
+    let count = match addrtype {
+        AddrType::Ip4 => rest.split_once('/')?.1,
+        AddrType::Ip6 => rest,
+        AddrType::Other(_) => return None,
+    };
+    Some(count.parse::<u8>().map_err(|_| count))
 }
 
 impl<T: Into<IpAddr>> From<T> for Connection {
