@@ -2723,6 +2723,322 @@ impl TypedAttribute for RemoteCandidates {
     const NAME: &'static str = "remote-candidates";
 }
 
+/// Filter mode of the [`SourceFilter`] (`a=source-filter`) attribute.
+///
+/// See [RFC 4570 Section 4](https://datatracker.ietf.org/doc/html/rfc4570#section-4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SourceFilterMode {
+    /// Accept only packets sent by the listed sources.
+    Incl,
+    /// Reject packets sent by the listed sources.
+    Excl,
+}
+
+impl SourceFilterMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SourceFilterMode::Incl => "incl",
+            SourceFilterMode::Excl => "excl",
+        }
+    }
+}
+
+impl FromStr for SourceFilterMode {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if "incl".eq_ignore_ascii_case(s) {
+            Ok(SourceFilterMode::Incl)
+        } else if "excl".eq_ignore_ascii_case(s) {
+            Ok(SourceFilterMode::Excl)
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl Display for SourceFilterMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Address type of the entries of the [`SourceFilter`] (`a=source-filter`)
+/// attribute.
+///
+/// Models the `address-types` production, which extends the SDP `addrtype`
+/// token with a `*` wildcard for FQDNs
+/// ([RFC 4570 Appendix A](https://datatracker.ietf.org/doc/html/rfc4570#appendix-A)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SourceFilterAddrType {
+    /// Any address family, only allowed with FQDN destinations.
+    Star,
+    /// IPv4 address
+    Ip4,
+    /// IPv6 address
+    Ip6,
+}
+
+impl SourceFilterAddrType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SourceFilterAddrType::Star => "*",
+            SourceFilterAddrType::Ip4 => "IP4",
+            SourceFilterAddrType::Ip6 => "IP6",
+        }
+    }
+}
+
+impl FromStr for SourceFilterAddrType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "*" {
+            Ok(SourceFilterAddrType::Star)
+        } else if "IP4".eq_ignore_ascii_case(s) {
+            Ok(SourceFilterAddrType::Ip4)
+        } else if "IP6".eq_ignore_ascii_case(s) {
+            Ok(SourceFilterAddrType::Ip6)
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl Display for SourceFilterAddrType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Address of the [`SourceFilter`] (`a=source-filter`) attribute
+///
+/// Models the `unicast-address` and `basic-multicast-address` productions:
+/// an IP address or an FQDN, but without the `/ttl` and `/number of
+/// addresses` suffixes that a connection address may carry
+/// ([RFC 4570 Appendix A](https://datatracker.ietf.org/doc/html/rfc4570#appendix-A)).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SourceFilterAddress {
+    /// IP address
+    IpAddr(IpAddr),
+    /// Fully qualified domain name
+    FQDN(String),
+}
+
+impl From<&str> for SourceFilterAddress {
+    fn from(s: &str) -> Self {
+        match s.parse::<IpAddr>() {
+            Ok(address) => SourceFilterAddress::IpAddr(address),
+            Err(_) => SourceFilterAddress::FQDN(s.to_string()),
+        }
+    }
+}
+
+impl FromStr for SourceFilterAddress {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(s.into())
+    }
+}
+
+impl Display for SourceFilterAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceFilterAddress::IpAddr(address) => write!(f, "{}", address),
+            SourceFilterAddress::FQDN(domain) => f.write_str(domain),
+        }
+    }
+}
+
+/// Destination of the [`SourceFilter`] (`a=source-filter`) attribute
+///
+/// Models the `dest-address` production
+/// ([RFC 4570 Appendix A](https://datatracker.ietf.org/doc/html/rfc4570#appendix-A)).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SourceFilterDestination {
+    /// The `"*"` wildcard, matching all of the session's connection addresses
+    Wildcard,
+    /// Unicast, multicast address or FQDN
+    Address(SourceFilterAddress),
+}
+
+impl FromStr for SourceFilterDestination {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "*" {
+            Ok(SourceFilterDestination::Wildcard)
+        } else {
+            Ok(SourceFilterDestination::Address(s.into()))
+        }
+    }
+}
+
+impl Display for SourceFilterDestination {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceFilterDestination::Wildcard => f.write_str("*"),
+            SourceFilterDestination::Address(address) => write!(f, "{}", address),
+        }
+    }
+}
+
+/// Source filter attribute (`a=source-filter`)
+///
+/// Restricts the set of source addresses accepted for a destination
+/// address, e.g. for source-specific multicast.
+///
+/// See [RFC 4570 Section 4](https://datatracker.ietf.org/doc/html/rfc4570#section-4).
+/// The destination must be one of the session's connection addresses or the
+/// `"*"` wildcard; unlike a connection address it never carries the `/ttl`
+/// and `/number of addresses` suffixes (RFC 4570, section 3.1).
+///
+/// Media-level source filters completely override session-level ones, which
+/// consumers have to resolve themselves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SourceFilter {
+    /// Inclusion or exclusion filter mode.
+    pub mode: SourceFilterMode,
+    /// Network type, usually [`NetType::In`].
+    pub nettype: NetType,
+    /// Address family of the destination and source addresses.
+    pub addrtype: SourceFilterAddrType,
+    /// Destination address or the `"*"` wildcard.
+    pub destination: SourceFilterDestination,
+    /// Source addresses, at least one entry.
+    pub sources: Vec<SourceFilterAddress>,
+}
+
+impl FromStr for SourceFilter {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <Self as TypedAttribute>::NAME.to_string();
+
+        // Runs of spaces are a single separator, like in c= lines,
+        // so that no field can end up empty.
+        let mut i = s.split(' ').filter(|part| !part.is_empty());
+
+        let Some(mode) = i.next() else {
+            return Err(AttributeError::ParamNotFound {
+                param: "Filter mode".to_string(),
+                attr,
+            });
+        };
+        let mode = mode
+            .parse()
+            .map_err(|_| AttributeError::InvalidParamValue {
+                param: "Filter mode".to_string(),
+                val: mode.to_string(),
+                attr: attr.clone(),
+            })?;
+
+        let Some(nettype) = i.next() else {
+            return Err(AttributeError::ParamNotFound {
+                param: "Network type".to_string(),
+                attr,
+            });
+        };
+        // RFC 4570 reuses the SDP nettype token (RFC 8866, section 9).
+        let nettype = NetType::from_str(nettype).expect("infallible");
+
+        let Some(addrtype) = i.next() else {
+            return Err(AttributeError::ParamNotFound {
+                param: "Address types".to_string(),
+                attr,
+            });
+        };
+        let addrtype = addrtype
+            .parse()
+            .map_err(|_| AttributeError::InvalidParamValue {
+                param: "Address types".to_string(),
+                val: addrtype.to_string(),
+                attr: attr.clone(),
+            })?;
+
+        let Some(destination) = i.next() else {
+            return Err(AttributeError::ParamNotFound {
+                param: "Destination address".to_string(),
+                attr,
+            });
+        };
+
+        // RFC 4570, section 3.1: a multicast destination MUST NOT include
+        // the /ttl and /number of addresses sub-fields.
+        if destination.contains('/') {
+            return Err(AttributeError::InvalidParamValue {
+                param: "Destination address".to_string(),
+                val: destination.to_string(),
+                attr,
+            });
+        }
+        let destination = SourceFilterDestination::from_str(destination).expect("infallible");
+        // RFC 4570, section 3.1: the "*" address type MUST only be used with
+        // FQDN destinations.
+        if addrtype == SourceFilterAddrType::Star
+            && matches!(
+                destination,
+                SourceFilterDestination::Address(SourceFilterAddress::IpAddr(_))
+            )
+        {
+            return Err(AttributeError::InvalidParamValue {
+                param: "Destination address".to_string(),
+                val: destination.to_string(),
+                attr,
+            });
+        }
+
+        let sources: Vec<&str> = i.collect();
+        if sources.is_empty() {
+            return Err(AttributeError::ParamNotFound {
+                param: "Source list".to_string(),
+                attr,
+            });
+        }
+        // RFC 4570, section 3.1: only the destination allows the "*" wildcard.
+        if let Some(source) = sources.iter().find(|source| source == &&"*") {
+            return Err(AttributeError::InvalidParamValue {
+                param: "Source address".to_string(),
+                val: source.to_string(),
+                attr,
+            });
+        }
+        let sources = sources.into_iter().map(SourceFilterAddress::from).collect();
+
+        Ok(SourceFilter {
+            mode,
+            nettype,
+            addrtype,
+            destination,
+            sources,
+        })
+    }
+}
+
+impl Display for SourceFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} {} {}",
+            self.mode, self.nettype, self.addrtype, self.destination
+        )?;
+        for source in &self.sources {
+            write!(f, " {}", source)?;
+        }
+        Ok(())
+    }
+}
+
+impl TypedAttribute for SourceFilter {
+    const NAME: &'static str = "source-filter";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -3600,6 +3916,105 @@ a=rtcp:53020\r
         ] {
             assert!(
                 invalid.parse::<RemoteCandidates>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
+    }
+
+    #[test]
+    fn parse_source_filter_attribute() {
+        // RFC 4570, section 3.2 examples.
+        let filter: SourceFilter = "incl IN IP4 232.3.4.5 192.0.2.10".parse().unwrap();
+        assert_eq!(filter.mode, SourceFilterMode::Incl);
+        assert_eq!(filter.nettype, NetType::In);
+        assert_eq!(filter.addrtype, SourceFilterAddrType::Ip4);
+        assert_eq!(
+            filter.destination,
+            SourceFilterDestination::Address(SourceFilterAddress::IpAddr(
+                "232.3.4.5".parse().unwrap()
+            ))
+        );
+        assert_eq!(
+            filter.sources,
+            ["192.0.2.10".parse::<SourceFilterAddress>().unwrap()]
+        );
+        assert_eq!(filter.to_string(), "incl IN IP4 232.3.4.5 192.0.2.10");
+
+        // Unicast destination.
+        let filter: SourceFilter = "excl IN IP4 192.0.2.11 192.0.2.10".parse().unwrap();
+        assert_eq!(filter.mode, SourceFilterMode::Excl);
+        assert_eq!(filter.to_string(), "excl IN IP4 192.0.2.11 192.0.2.10");
+
+        // Destination wildcard.
+        let filter: SourceFilter = "incl IN IP4 * 192.0.2.10".parse().unwrap();
+        assert_eq!(filter.destination, SourceFilterDestination::Wildcard);
+        assert_eq!(filter.to_string(), "incl IN IP4 * 192.0.2.10");
+
+        // Multiple space-separated sources.
+        let filter: SourceFilter = "incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.42"
+            .parse()
+            .unwrap();
+        assert_eq!(filter.sources.len(), 2);
+        assert_eq!(
+            filter.to_string(),
+            "incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.42"
+        );
+
+        // IPv6.
+        let filter: SourceFilter = "incl IN IP6 ff0e::11a 2001:db8::1".parse().unwrap();
+        assert_eq!(filter.addrtype, SourceFilterAddrType::Ip6);
+        assert_eq!(
+            filter.destination,
+            SourceFilterDestination::Address(SourceFilterAddress::IpAddr(
+                "ff0e::11a".parse().unwrap()
+            ))
+        );
+        assert_eq!(filter.to_string(), "incl IN IP6 ff0e::11a 2001:db8::1");
+
+        // FQDNs with the "*" address type.
+        let filter: SourceFilter = "incl IN * channel-1.example.com src-1.example.com"
+            .parse()
+            .unwrap();
+        assert_eq!(filter.addrtype, SourceFilterAddrType::Star);
+        assert_eq!(
+            filter.destination,
+            SourceFilterDestination::Address(SourceFilterAddress::FQDN(
+                "channel-1.example.com".to_string()
+            ))
+        );
+        assert_eq!(
+            filter.sources,
+            [SourceFilterAddress::FQDN("src-1.example.com".to_string())]
+        );
+        assert_eq!(
+            filter.to_string(),
+            "incl IN * channel-1.example.com src-1.example.com"
+        );
+
+        // Filter mode and address type matching is case-insensitive.
+        let filter: SourceFilter = "EXCL IN ip6 ff0e::11a 2001:db8::1".parse().unwrap();
+        assert_eq!(filter.mode, SourceFilterMode::Excl);
+        assert_eq!(filter.addrtype, SourceFilterAddrType::Ip6);
+
+        for invalid in [
+            "",
+            "incl",
+            "incl IN",
+            "incl IN IP4",
+            "incl IN IP4 232.3.4.5",
+            // No /ttl or /number of addresses suffixes on the destination
+            // (RFC 4570 section 3.1):
+            "incl IN IP4 232.3.4.5/127 192.0.2.10",
+            // The "*" address type only with FQDN destinations (section 3.1):
+            "incl IN * 232.3.4.5 192.0.2.10",
+            // The "*" wildcard is not allowed in the source list (appendix A):
+            "incl IN IP4 232.3.4.5 *",
+            "unknown IN IP4 232.3.4.5 192.0.2.10",
+            "incl IN IP8 232.3.4.5 192.0.2.10",
+        ] {
+            assert!(
+                invalid.parse::<SourceFilter>().is_err(),
                 "expected error for {:?}",
                 invalid
             );

@@ -17,6 +17,9 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   and `Connection::is_multicast()`.
 - `Rtcp::try_parse_ttl()`, `Rtcp::try_parse_number_of_addresses()` and
   `Rtcp::is_multicast()`.
+- `SourceFilter` (`a=source-filter`) attribute with `SourceFilterMode`,
+  `SourceFilterAddrType`, `SourceFilterDestination` and `SourceFilterAddress`
+  (RFC 4570).
 
 ### Changed
 - `Connection::try_parse_connection_ip_address()` now ignores an optional
