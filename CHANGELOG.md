@@ -11,6 +11,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   and `is_avpf()`.
 - `Rid` (`a=rid`) attribute and `RidDirection` enum (RFC 8851).
 - `KeyMgmt` (`a=key-mgmt`) attribute and `KeyMgmtMethod` enum (RFC 4567).
+- `RemoteCandidates` (`a=remote-candidates`) attribute and `RemoteCandidate`
+  (RFC 5245, RFC 8839).
 
 ## [0.3.0]
 ### Fixed
