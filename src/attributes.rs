@@ -11,7 +11,10 @@ use std::{
     str::FromStr,
 };
 
-use crate::{builders, enums::*, parser::is_token, Attribute};
+use crate::{
+    builders, enums::*, parse_connection_address, parse_connection_ip_address, parser::is_token,
+    Attribute, ConnectionAddress, ConnectionAddressError,
+};
 
 /// Trait for Typed Attribute structs
 pub trait TypedAttribute: Display + FromStr<Err = AttributeError> {
@@ -455,12 +458,97 @@ impl Rtcp {
 
     /// Tries to parse the `connection_address` `String` of `self` as `IpAddr`
     ///
+    /// An optional time-to-live suffix in `address/ttl` notation
+    /// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7))
+    /// is ignored, see [`Rtcp::try_address`].
+    ///
     /// Returns `None` if the address part is absent, the `Ok` with the parsed
     /// `IpAddr` or `Err` with the string address if parsing failed.
+    #[deprecated(since = "0.3.1", note = "use Rtcp::try_address instead")]
     pub fn try_parse_connection_ip_address(&self) -> Option<Result<IpAddr, &str>> {
         self.connection_address
             .as_deref()
-            .map(|address| address.parse::<IpAddr>().map_err(|_| address))
+            .map(parse_connection_ip_address)
+    }
+
+    /// The effective `addrtype` of the `connection_address`
+    ///
+    /// The `addrtype` field, or the address family inferred from the parsed
+    /// `IpAddr` if the field is `None`. `None` if the address part is absent
+    /// or its address family cannot be determined.
+    fn effective_addrtype(&self) -> Option<AddrType> {
+        self.addrtype.clone().or_else(|| {
+            let address = parse_connection_ip_address(self.connection_address.as_deref()?).ok()?;
+            Some(address.into())
+        })
+    }
+
+    /// Parses the `connection_address` into its components
+    ///
+    /// The `connection_address` of `a=rtcp` reuses the SDP connection
+    /// address token, so a multicast address may carry a time-to-live and a
+    /// number-of-addresses count in `address/ttl[/count]` notation, e.g.
+    /// `"224.2.1.1/16/3"`
+    /// ([RFC 3605 Section 2](https://datatracker.ietf.org/doc/html/rfc3605#section-2),
+    /// [RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+    ///
+    /// The address must parse as an [`IpAddr`]; an IPv4 multicast
+    /// time-to-live and a number-of-addresses suffix must parse as numbers.
+    /// A time-to-live is only defined for "IP4", for "IP6" the only suffix
+    /// is the address count.
+    ///
+    /// Returns `None` if the address part is absent, otherwise the parsed
+    /// [`ConnectionAddress`] or a [`ConnectionAddressError`] for the first
+    /// invalid component.
+    pub fn try_address(&self) -> Option<Result<ConnectionAddress, ConnectionAddressError>> {
+        let address = self.connection_address.as_deref()?;
+        match self.effective_addrtype() {
+            Some(addrtype) => Some(parse_connection_address(address, &addrtype)),
+            None => Some(Err(ConnectionAddressError::InvalidAddress(
+                address.to_string(),
+            ))),
+        }
+    }
+
+    /// Whether the `connection_address` is an IP multicast address
+    ///
+    /// Returns `false` if the address part is absent or cannot be parsed as
+    /// an [`IpAddr`].
+    pub fn is_multicast(&self) -> bool {
+        matches!(self.connection_address.as_deref().map(parse_connection_ip_address),
+            Some(Ok(address)) if address.is_multicast())
+    }
+
+    /// Like [`Rtcp::is_multicast`] but returns the parse error instead
+    /// of `false` if the address cannot be parsed. Only the address itself
+    /// is considered, invalid TTL or address-count suffixes do not error.
+    ///
+    /// Returns `None` if the address part is absent.
+    pub fn try_is_multicast(&self) -> Option<Result<bool, ConnectionAddressError>> {
+        let address = self.connection_address.as_deref()?;
+        Some(
+            parse_connection_ip_address(address)
+                .map(|address| address.is_multicast())
+                .map_err(|_| ConnectionAddressError::InvalidAddress(address.to_string())),
+        )
+    }
+
+    /// Whether the `connection_address` is an IPv4 address
+    ///
+    /// Returns `false` if the address part is absent or cannot be parsed as
+    /// an [`IpAddr`].
+    pub fn is_ipv4(&self) -> bool {
+        matches!(self.connection_address.as_deref().map(parse_connection_ip_address),
+            Some(Ok(address)) if address.is_ipv4())
+    }
+
+    /// Whether the `connection_address` is an IPv6 address
+    ///
+    /// Returns `false` if the address part is absent or cannot be parsed as
+    /// an [`IpAddr`].
+    pub fn is_ipv6(&self) -> bool {
+        matches!(self.connection_address.as_deref().map(parse_connection_ip_address),
+            Some(Ok(address)) if address.is_ipv6())
     }
 
     /// Sets the `connection_address` & `addrtype` of `self` from the specified `IpAddr`
@@ -3288,6 +3376,7 @@ a=candidate:7 1 UDP 10 192.168.1.1 49157 typ unknown_type\r
     }
 
     #[test]
+    #[allow(deprecated)]
     fn parse_rtcp_address() {
         let sdp = "v=0\r
 o=alice 3203093520 3203093520 IN IP4 host.example.com\r
@@ -3313,14 +3402,16 @@ a=rtcp:53020\r
         let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
         assert_eq!(rtcp.addrtype, Some(AddrType::Ip4));
         assert_eq!(rtcp.connection_address.as_deref(), Some("127.0.0.0/24"));
+        // The `/24` suffix is parsed as the TTL of RFC 8866 multicast
+        // notation, not as part of the address, see [`Rtcp::try_address`].
         assert_eq!(
-            &rtcp
-                .try_parse_connection_ip_address()
-                .unwrap()
-                .expect_err("IPv4 with mask")
-                .to_string(),
-            "127.0.0.0/24"
+            rtcp.try_parse_connection_ip_address().unwrap().unwrap(),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)),
         );
+        let address = rtcp.try_address().unwrap().unwrap();
+        assert_eq!(address.ttl, Some(24));
+        assert_eq!(address.count, None);
+        assert!(!rtcp.is_multicast());
 
         let rtcp = rtcp_attr_iter.next().unwrap().unwrap();
         assert_eq!(rtcp.addrtype, Some(AddrType::Ip6));
@@ -3345,7 +3436,66 @@ a=rtcp:53020\r
         assert_eq!(rtcp.addrtype, None);
         assert_eq!(rtcp.connection_address, None);
         assert_eq!(rtcp.try_parse_connection_ip_address(), None);
+        assert_eq!(rtcp.try_address(), None);
+        assert!(!rtcp.is_multicast());
         assert_eq!(rtcp.to_string(), "53020");
+    }
+
+    #[test]
+    fn rtcp_multicast_address_helpers() {
+        // RFC 3605: a=rtcp reuses the SDP connection-address token, so the
+        // multicast `address/ttl[/count]` notation of RFC 8866, section 5.7
+        // may also be used here. Parsing the notation itself is covered by
+        // `connection_try_address`, here only its use through `a=rtcp` and
+        // the address family inference that is specific to `a=rtcp`.
+        let rtcp = "5000 IN IP4 233.252.0.1/127/3".parse::<Rtcp>().unwrap();
+        assert!(rtcp.is_multicast());
+        assert_eq!(
+            rtcp.try_address().unwrap().unwrap(),
+            ConnectionAddress {
+                ip: Ipv4Addr::new(233, 252, 0, 1).into(),
+                ttl: Some(127),
+                count: Some(3),
+            }
+        );
+
+        // Without `addrtype` it is inferred from the address: IPv4 gets a
+        // TTL, IPv6 the address count.
+        let mut rtcp = Rtcp::with_port(5000);
+        rtcp.connection_address = Some("224.2.1.1/16".to_string());
+        let address = rtcp.try_address().unwrap().unwrap();
+        assert_eq!(address.ttl, Some(16));
+        assert_eq!(address.count, None);
+
+        let mut rtcp = Rtcp::with_port(5000);
+        rtcp.connection_address = Some("ff12::5/3".to_string());
+        let address = rtcp.try_address().unwrap().unwrap();
+        assert_eq!(address.ttl, None);
+        assert_eq!(address.count, Some(3));
+
+        let rtcp = "5000 IN IP6 ff12::5/3".parse::<Rtcp>().unwrap();
+        assert!(rtcp.is_ipv6());
+        assert!(!rtcp.is_ipv4());
+        assert_eq!(rtcp.try_is_multicast(), Some(Ok(true)));
+
+        // Without the address part the multicast and family helpers report
+        // `None`/`false`, `a=rtcp` only carries the port in that case.
+        let rtcp = Rtcp::with_port(5000);
+        assert_eq!(rtcp.try_is_multicast(), None);
+        assert!(!rtcp.is_multicast());
+        assert!(!rtcp.is_ipv4());
+        assert!(!rtcp.is_ipv6());
+
+        // FQDN addresses are not parseable as `IpAddr`.
+        let rtcp = "5000 IN IP4 rtcp.example.com".parse::<Rtcp>().unwrap();
+        assert!(!rtcp.is_multicast());
+        assert!(!rtcp.is_ipv4());
+        assert_eq!(
+            rtcp.try_is_multicast(),
+            Some(Err(ConnectionAddressError::InvalidAddress(
+                "rtcp.example.com".to_string()
+            )))
+        );
     }
 
     #[test]
