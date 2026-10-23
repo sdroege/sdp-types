@@ -10,6 +10,7 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 - `TransportProto`: Classification helpers `is_rtp()`, `is_sctp()`, `is_secure()`
   and `is_avpf()`.
 - `Rid` (`a=rid`) attribute and `RidDirection` enum (RFC 8851).
+- `KeyMgmt` (`a=key-mgmt`) attribute and `KeyMgmtMethod` enum (RFC 4567).
 
 ## [0.3.0]
 ### Fixed
