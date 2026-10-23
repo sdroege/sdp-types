@@ -24,6 +24,9 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   `Rtcp::is_ipv4()` and `Rtcp::is_ipv6()`, mirroring the `Connection` helpers
   for the `address/ttl[/count]` notation of the `a=rtcp` address (RFC 3605,
   RFC 8866 section 5.7).
+- `SourceFilter` (`a=source-filter`) attribute with `SourceFilterMode`,
+  `SourceFilterAddrType`, `SourceFilterDestination` and `SourceFilterAddress`
+  (RFC 4570).
 
 ### Changed
 - `Connection::try_parse_connection_ip_address()` now ignores an optional
