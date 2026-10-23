@@ -2260,6 +2260,143 @@ impl TypedAttribute for Candidate {
     const NAME: &'static str = "candidate";
 }
 
+/// Restricted identification line (`a=rid`) attribute
+///
+/// Represents the send/recv restriction that defines a unique RTP payload
+/// configuration, see
+/// [RFC 8851 Section 4](https://datatracker.ietf.org/doc/html/rfc8851#section-4).
+/// Restriction parameters (`pt=`, `max-width=`, `max-br=`, ...) are kept as raw
+/// `name[=value]` tokens, in order, without interpretation. The optional `pt=`
+/// payload format list is the first parameter when present.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Rid {
+    /// The restriction identifier, referenced by `a=extmap` and SDES items.
+    pub id: String,
+    /// Whether the restriction applies to a `send` or `recv` stream.
+    pub direction: RidDirection,
+    /// Restriction parameters, e.g. `pt=99,102` or `max-br=64000`.
+    pub params: Vec<String>,
+}
+
+impl Rid {
+    pub fn new(id: impl ToString, direction: RidDirection) -> Self {
+        Rid {
+            id: id.to_string(),
+            direction,
+            params: Vec::new(),
+        }
+    }
+
+    pub fn add_param(&mut self, param: impl ToString) {
+        self.params.push(param.to_string());
+    }
+
+    pub fn with_params(
+        id: impl ToString,
+        direction: RidDirection,
+        params: impl IntoIterator<Item = impl ToString>,
+    ) -> Self {
+        Rid {
+            id: id.to_string(),
+            direction,
+            params: params.into_iter().map(|p| p.to_string()).collect(),
+        }
+    }
+}
+
+impl FromStr for Rid {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <Self as TypedAttribute>::NAME.to_string();
+        let (id, rest) = s
+            .split_once(' ')
+            .ok_or_else(|| AttributeError::ParamNotFound {
+                param: "Direction".to_string(),
+                attr: attr.clone(),
+            })?;
+
+        let id = id.trim();
+        if id.is_empty() {
+            return Err(AttributeError::ParamNotFound {
+                param: "ID".to_string(),
+                attr: attr.clone(),
+            });
+        }
+
+        // RFC 8851, section 10: rid-id = 1*(alpha-numeric / "-" / "_"),
+        // with alpha-numeric = ALPHA / DIGIT (RFC 8866, section 8).
+        if !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Err(AttributeError::InvalidParamValue {
+                param: "ID".to_string(),
+                val: id.to_string(),
+                attr,
+            });
+        }
+
+        // The direction is optionally followed by a single space and the
+        // restriction parameter list.
+        let (direction_str, params_str) = match rest.trim().split_once(' ') {
+            Some((d, p)) => (d, p),
+            None => (rest.trim(), ""),
+        };
+
+        let direction = direction_str
+            .parse()
+            .map_err(|_| AttributeError::InvalidParamValue {
+                param: "Direction".to_string(),
+                val: direction_str.to_string(),
+                attr: attr.clone(),
+            })?;
+
+        let params = if params_str.trim().is_empty() {
+            Vec::new()
+        } else {
+            params_str
+                .trim()
+                .split(';')
+                .map(|p| p.trim())
+                .filter(|p| !p.is_empty())
+                .map(|p| {
+                    if p.contains(char::is_whitespace) {
+                        Err(AttributeError::InvalidParamValue {
+                            param: "Parameter".to_string(),
+                            val: p.to_string(),
+                            attr: attr.clone(),
+                        })
+                    } else {
+                        Ok(p.to_string())
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        Ok(Rid {
+            id: id.to_string(),
+            direction,
+            params,
+        })
+    }
+}
+
+impl Display for Rid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.id, self.direction)?;
+        if !self.params.is_empty() {
+            write!(f, " {}", self.params.join(";"))?;
+        }
+        Ok(())
+    }
+}
+
+impl TypedAttribute for Rid {
+    const NAME: &'static str = "rid";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -2967,5 +3104,64 @@ a=rtcp:53020\r
                 attr: "rtcp".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn parse_rid_attribute() {
+        // RFC 8851 examples.
+        let rid: Rid = "5 send pt=99,102;max-br=64000".parse().unwrap();
+        assert_eq!(
+            rid,
+            Rid::with_params("5", RidDirection::Send, ["pt=99,102", "max-br=64000"])
+        );
+        assert_eq!(rid.to_string(), "5 send pt=99,102;max-br=64000");
+
+        let rid: Rid = "6 send pt=100,97,101,102".parse().unwrap();
+        assert_eq!(
+            rid,
+            Rid::with_params("6", RidDirection::Send, ["pt=100,97,101,102"])
+        );
+
+        let rid: Rid = "f recv max-br=19.5;apt=100".parse().unwrap();
+        assert_eq!(
+            rid,
+            Rid::with_params("f", RidDirection::Recv, ["max-br=19.5", "apt=100"])
+        );
+        assert_eq!(rid.to_string(), "f recv max-br=19.5;apt=100");
+
+        // Without parameters, and with a valueless parameter.
+        let rid: Rid = "1 recv".parse().unwrap();
+        assert_eq!(rid.direction, RidDirection::Recv);
+        assert!(rid.params.is_empty());
+        assert_eq!(rid.to_string(), "1 recv");
+        assert_eq!(
+            "2 send max-width".parse::<Rid>().unwrap(),
+            Rid::with_params("2", RidDirection::Send, ["max-width"])
+        );
+
+        // Trailing separators are tolerated, direction is case-insensitive.
+        assert_eq!(
+            "2 SEND pt=99;".parse::<Rid>().unwrap(),
+            Rid::with_params("2", RidDirection::Send, ["pt=99"])
+        );
+
+        for invalid in [
+            "",
+            "1",
+            " send",
+            // The ID is restricted to alphanumeric, "-" and "_"
+            // (RFC 8851, section 10):
+            "1! send",
+            "id:1 recv",
+            "1 up",
+            "1 send x y",
+            "1 send pt=1;max br=2",
+        ] {
+            assert!(
+                invalid.parse::<Rid>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
     }
 }
