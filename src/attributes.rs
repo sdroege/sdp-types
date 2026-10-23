@@ -2397,6 +2397,124 @@ impl TypedAttribute for Rid {
     const NAME: &'static str = "rid";
 }
 
+/// Key management protocol of the [`KeyMgmt`] attribute.
+///
+/// The identifiers (KMPIDs) are case-sensitive, registered at IANA in the
+/// "SDP/RTSP key management protocol identifiers" subregistry
+/// ([RFC 4567 Section 9.3](https://datatracker.ietf.org/doc/html/rfc4567#section-9.3));
+/// `mikey` is the only value defined so far.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum KeyMgmtMethod {
+    /// Multimedia Internet KEYing ([RFC 3830](https://datatracker.ietf.org/doc/html/rfc3830)).
+    Mikey,
+    /// Any other, possibly unregistered method, kept verbatim.
+    Other(String),
+}
+
+impl From<&str> for KeyMgmtMethod {
+    fn from(s: &str) -> Self {
+        match s {
+            "mikey" => KeyMgmtMethod::Mikey,
+            other => KeyMgmtMethod::Other(other.to_string()),
+        }
+    }
+}
+
+impl std::str::FromStr for KeyMgmtMethod {
+    // FIXME use the never type when it is stable
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(s.into())
+    }
+}
+
+impl Display for KeyMgmtMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyMgmtMethod::Mikey => f.write_str("mikey"),
+            KeyMgmtMethod::Other(other) => f.write_str(other),
+        }
+    }
+}
+
+/// Key management attribute (`a=key-mgmt`) attribute
+///
+/// See [RFC 4567 Section 4.1](https://datatracker.ietf.org/doc/html/rfc4567#section-4.1).
+/// The key management data is kept verbatim; for the `mikey` method it is
+/// the base64-encoded MIKEY message (RFC 3830, RFC 4567 section 7).
+///
+/// Media-level `key-mgmt` attributes override session-level ones, which
+/// consumers have to resolve themselves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct KeyMgmt {
+    /// Key management protocol.
+    pub method: KeyMgmtMethod,
+    /// Key management data, if any.
+    pub data: Option<String>,
+}
+
+impl KeyMgmt {
+    pub fn new(method: KeyMgmtMethod) -> Self {
+        KeyMgmt { method, data: None }
+    }
+
+    pub fn with_data(method: KeyMgmtMethod, data: impl ToString) -> Self {
+        KeyMgmt {
+            method,
+            data: Some(data.to_string()),
+        }
+    }
+}
+
+impl FromStr for KeyMgmt {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if s.is_empty() {
+            return Err(AttributeError::ParamNotFound {
+                param: "Method".to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        let (method, data) = match s.split_once(char::is_whitespace) {
+            Some((method, data)) => (method, Some(data.trim().to_string())),
+            None => (s, None),
+        };
+
+        // RFC 4567, section 3: KMPID = 1*(ALPHA / DIGIT).
+        if !method.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            return Err(AttributeError::InvalidParamValue {
+                param: "Method".to_string(),
+                val: method.to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        Ok(KeyMgmt {
+            method: method.into(),
+            data,
+        })
+    }
+}
+
+impl Display for KeyMgmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.data {
+            Some(data) => write!(f, "{} {}", self.method, data),
+            None => write!(f, "{}", self.method),
+        }
+    }
+}
+
+impl TypedAttribute for KeyMgmt {
+    const NAME: &'static str = "key-mgmt";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -3163,5 +3281,43 @@ a=rtcp:53020\r
                 invalid
             );
         }
+    }
+
+    #[test]
+    fn parse_key_mgmt_attribute() {
+        let key_mgmt: KeyMgmt = "mikey AAAAIklkAAAAdGV4dHRleHR0ZXh0".parse().unwrap();
+        assert_eq!(
+            key_mgmt,
+            KeyMgmt::with_data(KeyMgmtMethod::Mikey, "AAAAIklkAAAAdGV4dHRleHR0ZXh0")
+        );
+        assert_eq!(key_mgmt.to_string(), "mikey AAAAIklkAAAAdGV4dHRleHR0ZXh0");
+
+        // Unknown methods are kept verbatim; KMPIDs are case-sensitive
+        // (RFC 4567 section 3), so `MIKEY` is not the `mikey` method.
+        for method in ["rawurl", "MIKEY", "internal"] {
+            let key_mgmt: KeyMgmt = format!("{} data", method).parse().unwrap();
+            assert_eq!(key_mgmt.method, KeyMgmtMethod::Other(method.to_string()));
+            assert_eq!(key_mgmt.data.as_deref(), Some("data"));
+            assert_eq!(key_mgmt.to_string(), format!("{} data", method));
+        }
+
+        // Method without data.
+        let key_mgmt: KeyMgmt = "internal".parse().unwrap();
+        assert_eq!(
+            key_mgmt,
+            KeyMgmt::new(KeyMgmtMethod::Other("internal".to_string()))
+        );
+        assert_eq!(key_mgmt.to_string(), "internal");
+
+        // Data is kept verbatim, including inner whitespace.
+        let key_mgmt: KeyMgmt = "mikey bar  baz".parse().unwrap();
+        assert_eq!(key_mgmt.data.as_deref(), Some("bar  baz"));
+        assert_eq!(key_mgmt.to_string(), "mikey bar  baz");
+
+        assert!("".parse::<KeyMgmt>().is_err());
+        assert!("   ".parse::<KeyMgmt>().is_err());
+        // The method is restricted to alphanumeric (RFC 4567, section 3):
+        assert!("mi!key data".parse::<KeyMgmt>().is_err());
+        assert!("-mikey".parse::<KeyMgmt>().is_err());
     }
 }
