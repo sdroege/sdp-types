@@ -2515,6 +2515,171 @@ impl TypedAttribute for KeyMgmt {
     const NAME: &'static str = "key-mgmt";
 }
 
+/// Remote candidate for one component of a data stream
+///
+/// A single entry of the [`RemoteCandidates`] attribute, in
+/// `component-id connection-address port` form
+/// ([RFC 8839 Section 5.2](https://datatracker.ietf.org/doc/html/rfc8839#section-5.2)).
+///
+/// The address must be an IP address: agents generating candidates MUST NOT
+/// use FQDNs and agents receiving them MUST ignore them
+/// ([RFC 8839 Section 5.1](https://datatracker.ietf.org/doc/html/rfc8839#section-5.1)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RemoteCandidate {
+    /// Component identifier of the data stream, 1 for RTP and 2 for RTCP.
+    pub component_id: u32,
+    /// Remote address (IPv4 or IPv6).
+    pub address: IpAddr,
+    /// Remote port.
+    pub port: u16,
+}
+
+impl RemoteCandidate {
+    pub fn new(component_id: u32, address: impl Into<IpAddr>, port: u16) -> Self {
+        RemoteCandidate {
+            component_id,
+            address: address.into(),
+            port,
+        }
+    }
+}
+
+impl FromStr for RemoteCandidate {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <RemoteCandidates as TypedAttribute>::NAME.to_string();
+        let mut parts = s.split_whitespace();
+
+        let component_id_token = parts.next().ok_or_else(|| AttributeError::ParamNotFound {
+            param: "Component ID".to_string(),
+            attr: attr.clone(),
+        })?;
+        let component_id =
+            component_id_token
+                .parse()
+                .map_err(|_| AttributeError::InvalidParamValue {
+                    param: "Component ID".to_string(),
+                    val: component_id_token.to_string(),
+                    attr: attr.clone(),
+                })?;
+
+        let address_token = parts.next().ok_or_else(|| AttributeError::ParamNotFound {
+            param: "Address".to_string(),
+            attr: attr.clone(),
+        })?;
+        let address = address_token
+            .parse()
+            .map_err(|_| AttributeError::InvalidParamValue {
+                param: "Address".to_string(),
+                val: address_token.to_string(),
+                attr: attr.clone(),
+            })?;
+
+        let port_token = parts.next().ok_or_else(|| AttributeError::ParamNotFound {
+            param: "Port".to_string(),
+            attr: attr.clone(),
+        })?;
+        let port = port_token
+            .parse()
+            .map_err(|_| AttributeError::InvalidParamValue {
+                param: "Port".to_string(),
+                val: port_token.to_string(),
+                attr: attr.clone(),
+            })?;
+
+        if let Some(val) = parts.next() {
+            return Err(AttributeError::UnexpectedTrailingItem {
+                val: val.to_string(),
+                attr,
+            });
+        }
+
+        Ok(RemoteCandidate {
+            component_id,
+            address,
+            port,
+        })
+    }
+}
+
+impl Display for RemoteCandidate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} {}", self.component_id, self.address, self.port)
+    }
+}
+
+/// Remote candidates attribute (`a=remote-candidates`)
+///
+/// Lists the remote ICE candidates corresponding to the nominated pair for
+/// each component of the data stream
+/// ([RFC 8839 Section 5.2](https://datatracker.ietf.org/doc/html/rfc8839#section-5.2)).
+/// The ordering of the components is irrelevant.
+///
+/// The grammar allows multiple entries in a single attribute; implementations
+/// also send one entry per `a=remote-candidates` line, which results in
+/// multiple attributes on the wire.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RemoteCandidates(pub Vec<RemoteCandidate>);
+
+impl RemoteCandidates {
+    pub fn new(candidates: impl IntoIterator<Item = RemoteCandidate>) -> Self {
+        RemoteCandidates(candidates.into_iter().collect())
+    }
+}
+
+impl FromStr for RemoteCandidates {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <Self as TypedAttribute>::NAME.to_string();
+        let mut tokens = s.split_whitespace();
+        let mut candidates = Vec::new();
+
+        // Every entry consists of exactly three tokens.
+        loop {
+            let triple: Vec<&str> = tokens.by_ref().take(3).collect();
+            match triple.len() {
+                0 => break,
+                1..=2 => {
+                    return Err(AttributeError::UnexpectedTrailingItem {
+                        val: triple.join(" "),
+                        attr,
+                    })
+                }
+                _ => candidates.push(triple.join(" ").parse()?),
+            }
+        }
+
+        if candidates.is_empty() {
+            return Err(AttributeError::ParamNotFound {
+                param: "Candidate".to_string(),
+                attr,
+            });
+        }
+
+        Ok(RemoteCandidates(candidates))
+    }
+}
+
+impl Display for RemoteCandidates {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, candidate) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_char(' ')?;
+            }
+            write!(f, "{}", candidate)?;
+        }
+        Ok(())
+    }
+}
+
+impl TypedAttribute for RemoteCandidates {
+    const NAME: &'static str = "remote-candidates";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -3319,5 +3484,51 @@ a=rtcp:53020\r
         // The method is restricted to alphanumeric (RFC 4567, section 3):
         assert!("mi!key data".parse::<KeyMgmt>().is_err());
         assert!("-mikey".parse::<KeyMgmt>().is_err());
+    }
+
+    #[test]
+    fn parse_remote_candidate_attribute() {
+        let candidates: RemoteCandidates = "1 192.168.1.1 50000".parse().unwrap();
+        assert_eq!(
+            candidates,
+            RemoteCandidates::new([RemoteCandidate::new(
+                1,
+                "192.168.1.1".parse::<IpAddr>().unwrap(),
+                50000
+            )])
+        );
+        assert_eq!(candidates.to_string(), "1 192.168.1.1 50000");
+
+        // Multiple entries in a single attribute (RFC 8839, section 5.2).
+        let candidates: RemoteCandidates = "1 192.0.2.3 45664 2 192.0.2.3 45665".parse().unwrap();
+        assert_eq!(candidates.0.len(), 2);
+        assert_eq!(candidates.0[1].component_id, 2);
+        assert_eq!(
+            candidates.to_string(),
+            "1 192.0.2.3 45664 2 192.0.2.3 45665"
+        );
+
+        // IPv6 and the value parsed on its own.
+        let candidate: RemoteCandidate = "1 2001:db8::1 9".parse().unwrap();
+        assert_eq!(candidate.address, "2001:db8::1".parse::<IpAddr>().unwrap());
+        assert_eq!(candidate.to_string(), "1 2001:db8::1 9");
+
+        for invalid in [
+            "",
+            "1",
+            "1 10.0.0.1",
+            "x 10.0.0.1 50000",
+            "1 x 50000",
+            // FQDNs must not be used (RFC 8839, section 5.1).
+            "1 example.com 50000",
+            "1 10.0.0.1 70000",
+            "1 10.0.0.1 50000 2",
+        ] {
+            assert!(
+                invalid.parse::<RemoteCandidates>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
     }
 }
