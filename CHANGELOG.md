@@ -13,6 +13,13 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 - `KeyMgmt` (`a=key-mgmt`) attribute and `KeyMgmtMethod` enum (RFC 4567).
 - `RemoteCandidates` (`a=remote-candidates`) attribute and `RemoteCandidate`
   (RFC 5245, RFC 8839).
+- `Connection::try_parse_ttl()`, `Connection::try_parse_number_of_addresses()`
+  and `Connection::is_multicast()`.
+
+### Changed
+- `Connection::try_parse_connection_ip_address()` now ignores an optional
+  time-to-live suffix in `address/ttl` notation (RFC 8866, section 5.7)
+  instead of failing to parse the address.
 
 ## [0.3.0]
 ### Fixed

@@ -250,12 +250,78 @@ impl Connection {
 
     /// Tries to parse the `connection_address` `String` of `self` as `IpAddr`
     ///
+    /// An optional time-to-live suffix in `address/ttl` notation
+    /// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7))
+    /// is ignored, see [`Connection::try_parse_ttl`].
+    ///
     /// Returns the `Ok` with the parsed `IpAddr` or `Err` with the string address
     /// if parsing failed.
     pub fn try_parse_connection_ip_address(&self) -> Result<IpAddr, &str> {
-        self.connection_address
+        let address = match self.connection_address.split_once('/') {
+            Some((address, _)) => address,
+            None => self.connection_address.as_str(),
+        };
+        address
             .parse::<IpAddr>()
             .map_err(|_| self.connection_address.as_str())
+    }
+
+    /// Tries to parse the multicast time-to-live of the `connection_address`
+    ///
+    /// The connection address of IPv4 multicast sessions may have a
+    /// time-to-live value written after the address and separated by a `/`,
+    /// e.g. `"224.2.1.1/16"`, optionally followed by a number-of-addresses
+    /// count for layered/multigroup sessions, e.g. `"224.2.1.1/16/3"`
+    /// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+    ///
+    /// TTL is only defined for "IP4", an "IP6" suffix is always an address
+    /// count, so this returns `None` for "IP6"
+    /// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+    ///
+    /// Returns `Some` only if the address has a TTL suffix, with `Ok` for a
+    /// parsed TTL or `Err` with the suffix string if parsing failed.
+    pub fn try_parse_ttl(&self) -> Option<Result<u8, &str>> {
+        if self.addrtype != AddrType::Ip4 {
+            return None;
+        }
+
+        let rest = self.connection_address.split_once('/')?.1;
+        let ttl = match rest.split_once('/') {
+            Some((ttl, _count)) => ttl,
+            None => rest,
+        };
+        Some(ttl.parse::<u8>().map_err(|_| ttl))
+    }
+
+    /// Tries to parse the number of addresses of the `connection_address`
+    ///
+    /// A multicast connection address may be followed by the number of
+    /// subsequent group addresses used for layered/multigroup sessions, e.g.
+    /// `"233.252.0.1/127/3"` for "IP4" or `"ff00::db8:0:101/3"` for "IP6"
+    /// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+    ///
+    /// For "IP4" this is the second suffix after the TTL, for "IP6" the
+    /// first and only one.
+    ///
+    /// Returns `Some` only if the address has such a suffix, with `Ok` for a
+    /// parsed count or `Err` with the suffix string if parsing failed.
+    pub fn try_parse_number_of_addresses(&self) -> Option<Result<u8, &str>> {
+        let rest = self.connection_address.split_once('/')?.1;
+        let count = match self.addrtype {
+            AddrType::Ip4 => rest.split_once('/')?.1,
+            AddrType::Ip6 => rest,
+            AddrType::Other(_) => return None,
+        };
+        Some(count.parse::<u8>().map_err(|_| count))
+    }
+
+    /// Whether the `connection_address` is an IP multicast address
+    ///
+    /// Returns `false` if the address cannot be parsed as an [`IpAddr`].
+    pub fn is_multicast(&self) -> bool {
+        self.try_parse_connection_ip_address()
+            .map(|address| address.is_multicast())
+            .unwrap_or(false)
     }
 }
 
@@ -1261,6 +1327,58 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
     }
 
     #[test]
+    fn connection_ttl_notation() {
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/16");
+        assert_eq!(
+            connection.try_parse_connection_ip_address().unwrap(),
+            "224.2.1.1".parse::<IpAddr>().unwrap(),
+        );
+        assert_eq!(connection.try_parse_ttl(), Some(Ok(16)));
+        assert_eq!(connection.try_parse_number_of_addresses(), None);
+        assert!(connection.is_multicast());
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "127.0.0.1");
+        assert_eq!(connection.try_parse_ttl(), None);
+        assert!(!connection.is_multicast());
+
+        // The TTL part is not parsed as part of the address and vice versa.
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/x");
+        assert!(connection.try_parse_connection_ip_address().is_ok());
+        assert_eq!(connection.try_parse_ttl(), Some(Err("x")));
+        assert!(connection.is_multicast());
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/300");
+        assert_eq!(connection.try_parse_ttl(), Some(Err("300")));
+
+        // The number-of-addresses count suffix (RFC 8866, section 5.7) is
+        // not a TTL and does not affect TTL parsing.
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/16/2");
+        assert_eq!(connection.try_parse_ttl(), Some(Ok(16)));
+        assert_eq!(connection.try_parse_number_of_addresses(), Some(Ok(2)));
+        assert!(connection.try_parse_connection_ip_address().is_ok());
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/16/x");
+        assert_eq!(connection.try_parse_number_of_addresses(), Some(Err("x")));
+
+        // "IP6" multicast never has a TTL, its suffix is an address count.
+        let connection = Connection::new(NetType::In, AddrType::Ip6, "ff12::5/3");
+        assert_eq!(connection.try_parse_ttl(), None);
+        assert_eq!(connection.try_parse_number_of_addresses(), Some(Ok(3)));
+        assert_eq!(
+            connection.try_parse_connection_ip_address().unwrap(),
+            "ff12::5".parse::<IpAddr>().unwrap(),
+        );
+        assert!(connection.is_multicast());
+
+        let connection = Connection::new(NetType::In, AddrType::Ip6, "ff12::5");
+        assert_eq!(connection.try_parse_number_of_addresses(), None);
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "x/16");
+        assert_eq!(connection.try_parse_connection_ip_address(), Err("x/16"),);
+        assert!(!connection.is_multicast());
+    }
+
+    #[test]
     fn connection_parse_address_error() {
         use std::net::Ipv6Addr;
 
@@ -1276,10 +1394,11 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
             IpAddr::V4(Ipv4Addr::LOCALHOST),
         );
 
+        // A time-to-live suffix is not part of the address itself.
         connection.connection_address = "127.0.0.1/24".to_string();
         assert_eq!(
-            connection.try_parse_connection_ip_address().unwrap_err(),
-            connection.connection_address
+            connection.try_parse_connection_ip_address().unwrap(),
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
         );
 
         connection.connection_address = "non-ip".to_string();
