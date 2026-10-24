@@ -3093,6 +3093,43 @@ impl TypedAttribute for SourceFilter {
     const NAME: &'static str = "source-filter";
 }
 
+/// Media stream identification tag attribute (`a=mid`)
+///
+/// Assigns an identification tag to a media description, unique within
+/// the session description, used to reference media descriptions from
+/// grouping semantics such as BUNDLE.
+///
+/// See [RFC 5888 Section 4](https://datatracker.ietf.org/doc/html/rfc5888#section-4).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Mid(pub String);
+
+impl FromStr for Mid {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if !is_token(s.as_bytes()) {
+            return Err(AttributeError::InvalidParamValue {
+                param: "Identification tag".to_string(),
+                val: s.to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        Ok(Mid(s.to_string()))
+    }
+}
+
+impl Display for Mid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TypedAttribute for Mid {
+    const NAME: &'static str = "mid";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -4102,6 +4139,32 @@ a=rtcp:53020\r
         ] {
             assert!(
                 invalid.parse::<SourceFilter>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
+    }
+
+    #[test]
+    fn parse_mid_attribute() {
+        let mid: Mid = "1".parse().unwrap();
+        assert_eq!(mid, Mid("1".to_string()));
+        assert_eq!(mid.to_string(), "1");
+
+        let attribute: Attribute = mid.clone().into();
+        assert_eq!(attribute.attribute, "mid");
+        assert_eq!(attribute.value.as_deref(), Some("1"));
+
+        // Media descriptions commonly use opaque, browser-style tags.
+        let mid: Mid = "v2R1d1".parse().unwrap();
+        assert_eq!(mid.to_string(), "v2R1d1");
+
+        for invalid in [
+            "", " ", // The identification tag is a token (RFC 8866, section 5).
+            "1 2", "a:b",
+        ] {
+            assert!(
+                invalid.parse::<Mid>().is_err(),
                 "expected error for {:?}",
                 invalid
             );
