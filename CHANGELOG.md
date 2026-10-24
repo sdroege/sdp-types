@@ -27,6 +27,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 - `SourceFilter` (`a=source-filter`) attribute with `SourceFilterMode`,
   `SourceFilterAddrType`, `SourceFilterDestination` and `SourceFilterAddress`
   (RFC 4570).
+- `Session`: `Display` implementation that formats the session description,
+  same as `Session::write()`.
 
 ### Changed
 - `Connection::try_parse_connection_ip_address()` now ignores an optional

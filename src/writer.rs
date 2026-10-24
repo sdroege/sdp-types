@@ -265,9 +265,32 @@ impl Session {
     }
 }
 
+impl std::fmt::Display for Session {
+    /// Formats the SDP session description, identical to
+    /// [`Session::write`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut buf = Vec::new();
+        self.write(&mut buf).map_err(|_| std::fmt::Error)?;
+        f.write_str(&String::from_utf8_lossy(&buf))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_session() {
+        let sdp = "v=0\r
+o=- 0 0 IN IP4 127.0.0.1\r
+s=x\r
+t=0 0\r
+";
+        let session = Session::parse(sdp.as_bytes()).unwrap();
+        let mut buf = Vec::new();
+        session.write(&mut buf).unwrap();
+        assert_eq!(session.to_string(), String::from_utf8(buf).unwrap());
+    }
 
     #[test]
     fn write_sdp() {
