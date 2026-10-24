@@ -29,6 +29,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   (RFC 4570).
 - `Session`: `Display` implementation that formats the session description,
   same as `Session::write()`.
+- `Mid` (`a=mid`) media stream identification tag attribute
+  (RFC 5888, section 4).
 
 ### Changed
 - `Connection::try_parse_connection_ip_address()` now ignores an optional
