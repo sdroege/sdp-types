@@ -48,6 +48,9 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   property attribute (RFC 8840, section 8.1).
 - `Msid` (`a=msid`) MediaStream identification attribute
   (RFC 8830, section 2).
+- `SctpPort` (`a=sctp-port`) SCTP port attribute (RFC 8841, section 5.2).
+- `MaxMessageSize` (`a=max-message-size`) maximum SCTP user message
+  size attribute (RFC 8841, section 6.2).
 
 ### Changed
 - `Session::attributes_typed()`, `Media::attributes_typed()` and

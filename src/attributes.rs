@@ -3538,6 +3538,95 @@ impl TypedAttribute for Msid {
     const NAME: &'static str = "msid";
 }
 
+/// SCTP port attribute (`a=sctp-port`)
+///
+/// Indicates the SCTP port number of the association used by the media
+/// description, used with the "UDP/DTLS/SCTP" and "TCP/DTLS/SCTP"
+/// proto values at the media level. The port range is 0 to 65535 and
+/// leading zeroes are not used.
+///
+/// See [RFC 8841 Section 5.2](https://datatracker.ietf.org/doc/html/rfc8841#section-5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SctpPort(pub u16);
+
+/// Parses `1*5DIGIT` without leading zeroes into a `u16` port or count.
+fn parse_1_5_digits(s: &str) -> Option<u16> {
+    if s.is_empty()
+        || s.len() > 5
+        || !s.chars().all(|c| c.is_ascii_digit())
+        || (s.len() > 1 && s.starts_with('0'))
+    {
+        return None;
+    }
+
+    s.parse().ok()
+}
+
+impl FromStr for SctpPort {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let invalid = || AttributeError::InvalidParamValue {
+            param: "SCTP port".to_string(),
+            val: s.to_string(),
+            attr: <Self as TypedAttribute>::NAME.to_string(),
+        };
+
+        // sctp-port-value = 1*5DIGIT, leading zeroes must not be used.
+        let port = parse_1_5_digits(s).ok_or_else(invalid)?;
+        Ok(SctpPort(port))
+    }
+}
+
+impl Display for SctpPort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TypedAttribute for SctpPort {
+    const NAME: &'static str = "sctp-port";
+}
+
+/// Maximum SCTP user message size attribute (`a=max-message-size`)
+///
+/// Indicates the maximum SCTP user message size, in bytes, that the
+/// endpoint is willing to receive, where zero means any size. It is
+/// used at the media level and defaults to 64 KiB when absent. Leading
+/// zeroes are not used.
+///
+/// See [RFC 8841 Section 6.2](https://datatracker.ietf.org/doc/html/rfc8841#section-6.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct MaxMessageSize(pub u64);
+
+impl FromStr for MaxMessageSize {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let invalid = || AttributeError::InvalidParamValue {
+            param: "Max message size".to_string(),
+            val: s.to_string(),
+            attr: <Self as TypedAttribute>::NAME.to_string(),
+        };
+
+        // max-message-size-value = 1*DIGIT, leading zeroes must not be used.
+        let size = parse_decimal_no_leading_zeroes(s).ok_or_else(invalid)?;
+        Ok(MaxMessageSize(size))
+    }
+}
+
+impl Display for MaxMessageSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TypedAttribute for MaxMessageSize {
+    const NAME: &'static str = "max-message-size";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -4768,6 +4857,67 @@ a=rtcp-mux\r
         ] {
             assert!(
                 invalid.parse::<Msid>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
+    }
+
+    #[test]
+    fn parse_sctp_port_attribute() {
+        // RFC 8841, section 5.2 example.
+        let port: SctpPort = "5000".parse().unwrap();
+        assert_eq!(port, SctpPort(5000));
+        assert_eq!(port.to_string(), "5000");
+
+        let attribute: Attribute = port.into();
+        assert_eq!(attribute.attribute, "sctp-port");
+        assert_eq!(attribute.value.as_deref(), Some("5000"));
+
+        // The port range includes 0 and 65535 (RFC 8841, section 5.2).
+        assert_eq!("0".parse::<SctpPort>().unwrap(), SctpPort(0));
+        assert_eq!("65535".parse::<SctpPort>().unwrap(), SctpPort(65535));
+
+        for invalid in [
+            "", "65536",  // out of range
+            "99999",  // 5 digits but out of range
+            "05000",  // leading zeroes must not be used
+            "500000", // more than 5 digits
+            "abc", "50a",
+        ] {
+            assert!(
+                invalid.parse::<SctpPort>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
+    }
+
+    #[test]
+    fn parse_max_message_size_attribute() {
+        // RFC 8841, section 6.2 example.
+        let size: MaxMessageSize = "100000".parse().unwrap();
+        assert_eq!(size, MaxMessageSize(100000));
+        assert_eq!(size.to_string(), "100000");
+
+        let attribute: Attribute = size.into();
+        assert_eq!(attribute.attribute, "max-message-size");
+        assert_eq!(attribute.value.as_deref(), Some("100000"));
+
+        // Zero means messages of any size (RFC 8841, section 6.1).
+        assert_eq!("0".parse::<MaxMessageSize>().unwrap(), MaxMessageSize(0));
+
+        let too_large = "1".repeat(21);
+        for invalid in [
+            "",
+            "01", // leading zeroes must not be used
+            "1_000",
+            "abc",
+            "10a",
+            too_large.as_str(), // larger than u64::MAX
+        ] {
+            assert!(
+                invalid.parse::<MaxMessageSize>().is_err(),
                 "expected error for {:?}",
                 invalid
             );
