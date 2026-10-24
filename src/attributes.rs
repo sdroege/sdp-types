@@ -3200,6 +3200,42 @@ impl TypedAttribute for RtcpMuxOnly {
     const NAME: &'static str = "rtcp-mux-only";
 }
 
+/// Reduced-size RTCP attribute (`a=rtcp-rsize`)
+///
+/// Indicates that the endpoint supports the reduced-size RTCP
+/// compound packet format for the media stream. It is a property
+/// attribute without a value, used at the media level.
+///
+/// See [RFC 5506 Section 5](https://datatracker.ietf.org/doc/html/rfc5506#section-5).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RtcpRsize;
+
+impl FromStr for RtcpRsize {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if !s.is_empty() {
+            return Err(AttributeError::UnsupportedFormat {
+                val: s.to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        Ok(RtcpRsize)
+    }
+}
+
+impl Display for RtcpRsize {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+impl TypedAttribute for RtcpRsize {
+    const NAME: &'static str = "rtcp-rsize";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -4276,5 +4312,17 @@ a=rtcp-mux\r
 
         // A property attribute must not carry a value.
         assert!("1".parse::<RtcpMuxOnly>().is_err());
+    }
+
+    #[test]
+    fn parse_rtcp_rsize_attribute() {
+        assert!(matches!("".parse::<RtcpRsize>(), Ok(RtcpRsize)));
+
+        let attribute: Attribute = RtcpRsize.into();
+        assert_eq!(attribute.attribute, "rtcp-rsize");
+        assert_eq!(attribute.value, None);
+
+        // A property attribute must not carry a value.
+        assert!("1".parse::<RtcpRsize>().is_err());
     }
 }
