@@ -3451,6 +3451,93 @@ impl TypedAttribute for EndOfCandidates {
     const NAME: &'static str = "end-of-candidates";
 }
 
+/// MediaStream identification attribute (`a=msid`)
+///
+/// Associates a media description with a MediaStream and identifies the
+/// MediaStreamTrack it conveys in the application data. Both fields are
+/// tokens of 1 to 64 characters.
+///
+/// See [RFC 8830 Section 2](https://datatracker.ietf.org/doc/html/rfc8830#section-2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Msid {
+    /// Identifier of the MediaStream this media description belongs to.
+    pub id: String,
+    /// Application data, the identifier of the MediaStreamTrack.
+    pub appdata: Option<String>,
+}
+
+impl Msid {
+    pub fn new(id: impl ToString, appdata: Option<impl ToString>) -> Self {
+        Msid {
+            id: id.to_string(),
+            appdata: appdata.map(|appdata| appdata.to_string()),
+        }
+    }
+}
+
+impl FromStr for Msid {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <Self as TypedAttribute>::NAME.to_string();
+        let mut tokens = s.split_whitespace();
+
+        let id = tokens.next().ok_or_else(|| AttributeError::ParamNotFound {
+            param: "MSID id".to_string(),
+            attr: attr.clone(),
+        })?;
+        let appdata = tokens.next();
+
+        let trailing: Vec<_> = tokens.collect();
+        if !trailing.is_empty() {
+            return Err(AttributeError::UnexpectedTrailingItem {
+                val: trailing.join(" "),
+                attr,
+            });
+        }
+
+        // Both fields are 1*64 token-chars (RFC 8830, section 2).
+        if id.len() > 64 || !is_token(id.as_bytes()) {
+            return Err(AttributeError::InvalidParamValue {
+                param: "MSID id".to_string(),
+                val: id.to_string(),
+                attr,
+            });
+        }
+
+        if let Some(appdata) = appdata {
+            if appdata.len() > 64 || !is_token(appdata.as_bytes()) {
+                return Err(AttributeError::InvalidParamValue {
+                    param: "MSID appdata".to_string(),
+                    val: appdata.to_string(),
+                    attr,
+                });
+            }
+        }
+
+        Ok(Msid {
+            id: id.to_string(),
+            appdata: appdata.map(ToString::to_string),
+        })
+    }
+}
+
+impl Display for Msid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.id)?;
+        if let Some(appdata) = &self.appdata {
+            f.write_char(' ')?;
+            f.write_str(appdata)?;
+        }
+        Ok(())
+    }
+}
+
+impl TypedAttribute for Msid {
+    const NAME: &'static str = "msid";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -4653,5 +4740,37 @@ a=rtcp-mux\r
 
         // A property attribute must not carry a value.
         assert!("1".parse::<EndOfCandidates>().is_err());
+    }
+
+    #[test]
+    fn parse_msid_attribute() {
+        // RFC 8830, section 2 example.
+        let msid: Msid = "examplefoo examplebar".parse().unwrap();
+        assert_eq!(msid, Msid::new("examplefoo", Some("examplebar")));
+        assert_eq!(msid.to_string(), "examplefoo examplebar");
+
+        let attribute: Attribute = msid.into();
+        assert_eq!(attribute.attribute, "msid");
+        assert_eq!(attribute.value.as_deref(), Some("examplefoo examplebar"));
+
+        // The appdata is optional; "-" means "no MediaStream" and is a valid
+        // token (RFC 8830, section 3).
+        let msid: Msid = "-".parse().unwrap();
+        assert_eq!(msid, Msid::new("-", None::<&str>));
+        assert_eq!(msid.to_string(), "-");
+
+        let too_long = "a".repeat(65);
+        for invalid in [
+            "",
+            too_long.as_str(), // longer than 64 characters
+            "foo \u{fffd}",    // non-token character
+            "foo bar baz",     // more than two fields
+        ] {
+            assert!(
+                invalid.parse::<Msid>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
     }
 }

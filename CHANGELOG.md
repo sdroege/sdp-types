@@ -46,6 +46,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   (RFC 5245, section 15.5).
 - `EndOfCandidates` (`a=end-of-candidates`) end of ICE candidates
   property attribute (RFC 8840, section 8.1).
+- `Msid` (`a=msid`) MediaStream identification attribute
+  (RFC 8830, section 2).
 
 ### Changed
 - `Session::attributes_typed()`, `Media::attributes_typed()` and
