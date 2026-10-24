@@ -37,6 +37,15 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   attribute (RFC 8858, section 3).
 - `RtcpRsize` (`a=rtcp-rsize`) reduced-size RTCP property attribute
   (RFC 5506, section 5).
+- `IceLite` (`a=ice-lite`) ICE-lite implementation property attribute
+  (RFC 5245, section 15.3).
+- `IceUfrag` (`a=ice-ufrag`) ICE username fragment attribute
+  (RFC 5245, section 15.4).
+- `IcePwd` (`a=ice-pwd`) ICE password attribute (RFC 5245, section 15.4).
+- `IceOptions` (`a=ice-options`) ICE extension option tags attribute
+  (RFC 5245, section 15.5).
+- `EndOfCandidates` (`a=end-of-candidates`) end of ICE candidates
+  property attribute (RFC 8840, section 8.1).
 
 ### Changed
 - `Session::attributes_typed()`, `Media::attributes_typed()` and

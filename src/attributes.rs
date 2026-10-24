@@ -3236,6 +3236,221 @@ impl TypedAttribute for RtcpRsize {
     const NAME: &'static str = "rtcp-rsize";
 }
 
+/// ICE-lite implementation attribute (`a=ice-lite`)
+///
+/// Indicates that the agent implements the ICE-lite implementation,
+/// which does not run the full ICE connectivity checks. It is a
+/// property attribute without a value, used at the session level.
+///
+/// See [RFC 5245 Section 15.3](https://datatracker.ietf.org/doc/html/rfc5245#section-15.3).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct IceLite;
+
+impl FromStr for IceLite {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if !s.is_empty() {
+            return Err(AttributeError::UnsupportedFormat {
+                val: s.to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        Ok(IceLite)
+    }
+}
+
+impl Display for IceLite {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+impl TypedAttribute for IceLite {
+    const NAME: &'static str = "ice-lite";
+}
+
+/// ICE character of the `ice-char` production (RFC 5245, section 15.1).
+fn is_ice_char(c: char) -> bool {
+    matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '+' | '/')
+}
+
+/// ICE username fragment attribute (`a=ice-ufrag`)
+///
+/// Conveys the username fragment used by ICE for message integrity,
+/// 4 to 256 ICE characters. It can appear at the session level or the
+/// media level, where the media level value takes precedence.
+///
+/// See [RFC 5245 Section 15.4](https://datatracker.ietf.org/doc/html/rfc5245#section-15.4).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct IceUfrag(pub String);
+
+impl FromStr for IceUfrag {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // ICE characters are ASCII, so the byte length is the length.
+        if !(4..=256).contains(&s.len()) || !s.chars().all(is_ice_char) {
+            return Err(AttributeError::InvalidParamValue {
+                param: "ICE username fragment".to_string(),
+                val: s.to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        Ok(IceUfrag(s.to_string()))
+    }
+}
+
+impl Display for IceUfrag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TypedAttribute for IceUfrag {
+    const NAME: &'static str = "ice-ufrag";
+}
+
+/// ICE password attribute (`a=ice-pwd`)
+///
+/// Conveys the password used by ICE for message integrity, 22 to 256
+/// ICE characters. It can appear at the session level or the media
+/// level, where the media level value takes precedence.
+///
+/// See [RFC 5245 Section 15.4](https://datatracker.ietf.org/doc/html/rfc5245#section-15.4).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct IcePwd(pub String);
+
+impl FromStr for IcePwd {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // ICE characters are ASCII, so the byte length is the length.
+        if !(22..=256).contains(&s.len()) || !s.chars().all(is_ice_char) {
+            return Err(AttributeError::InvalidParamValue {
+                param: "ICE password".to_string(),
+                val: s.to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        Ok(IcePwd(s.to_string()))
+    }
+}
+
+impl Display for IcePwd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TypedAttribute for IcePwd {
+    const NAME: &'static str = "ice-pwd";
+}
+
+/// ICE extension option tags attribute (`a=ice-options`)
+///
+/// Lists the ICE extension option tags supported by the agent, e.g.
+/// `trickle` (RFC 8839). It is used at the session level.
+///
+/// See [RFC 5245 Section 15.5](https://datatracker.ietf.org/doc/html/rfc5245#section-15.5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct IceOptions(pub Vec<String>);
+
+impl IceOptions {
+    pub fn new(tags: impl IntoIterator<Item = impl ToString>) -> Self {
+        IceOptions(tags.into_iter().map(|tag| tag.to_string()).collect())
+    }
+}
+
+impl FromStr for IceOptions {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <Self as TypedAttribute>::NAME.to_string();
+        let mut tags = Vec::new();
+
+        for tag in s.split_whitespace() {
+            if !tag.chars().all(is_ice_char) {
+                return Err(AttributeError::InvalidParamValue {
+                    param: "ICE option tag".to_string(),
+                    val: tag.to_string(),
+                    attr,
+                });
+            }
+
+            tags.push(tag.to_string());
+        }
+
+        if tags.is_empty() {
+            return Err(AttributeError::ParamNotFound {
+                param: "ICE option tags".to_string(),
+                attr,
+            });
+        }
+
+        Ok(IceOptions(tags))
+    }
+}
+
+impl Display for IceOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, tag) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_char(' ')?;
+            }
+            f.write_str(tag)?;
+        }
+        Ok(())
+    }
+}
+
+impl TypedAttribute for IceOptions {
+    const NAME: &'static str = "ice-options";
+}
+
+/// End of ICE candidates attribute (`a=end-of-candidates`)
+///
+/// Indicates that the sending agent will not trickle further ICE
+/// candidates. It is a property attribute without a value, used at the
+/// session level or the media level.
+///
+/// See [RFC 8840 Section 8.1](https://datatracker.ietf.org/doc/html/rfc8840#section-8.1).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct EndOfCandidates;
+
+impl FromStr for EndOfCandidates {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if !s.is_empty() {
+            return Err(AttributeError::UnsupportedFormat {
+                val: s.to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        Ok(EndOfCandidates)
+    }
+}
+
+impl Display for EndOfCandidates {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+impl TypedAttribute for EndOfCandidates {
+    const NAME: &'static str = "end-of-candidates";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -4324,5 +4539,119 @@ a=rtcp-mux\r
 
         // A property attribute must not carry a value.
         assert!("1".parse::<RtcpRsize>().is_err());
+    }
+
+    #[test]
+    fn parse_ice_lite_attribute() {
+        assert!(matches!("".parse::<IceLite>(), Ok(IceLite)));
+
+        let attribute: Attribute = IceLite.into();
+        assert_eq!(attribute.attribute, "ice-lite");
+        assert_eq!(attribute.value, None);
+
+        // A property attribute must not carry a value.
+        assert!("1".parse::<IceLite>().is_err());
+    }
+
+    #[test]
+    fn parse_ice_ufrag_attribute() {
+        let ufrag: IceUfrag = "EpGh".parse().unwrap();
+        assert_eq!(ufrag, IceUfrag("EpGh".to_string()));
+        assert_eq!(ufrag.to_string(), "EpGh");
+
+        let attribute: Attribute = ufrag.into();
+        assert_eq!(attribute.attribute, "ice-ufrag");
+        assert_eq!(attribute.value.as_deref(), Some("EpGh"));
+
+        // All ICE characters are allowed, including "+" and "/" (RFC 5245,
+        // section 15.1).
+        assert_eq!("a+Z/9".parse::<IceUfrag>().unwrap().to_string(), "a+Z/9");
+
+        // The 256 characters upper bound.
+        assert!("a".repeat(256).parse::<IceUfrag>().is_ok());
+
+        let too_long = "a".repeat(257);
+        for invalid in [
+            "",
+            "abc",             // shorter than 4 characters
+            too_long.as_str(), // longer than 256 characters
+            "Ep-Gh",           // "-" is not an ICE character
+            "Ep Gh",           // neither is the space
+            "\u{30b0}pGh",     // non-ASCII
+        ] {
+            assert!(
+                invalid.parse::<IceUfrag>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
+    }
+
+    #[test]
+    fn parse_ice_pwd_attribute() {
+        let password = "aq1s2dq3w4er5ty6ui7p8o9i0u";
+        let pwd: IcePwd = password.parse().unwrap();
+        assert_eq!(pwd, IcePwd(password.to_string()));
+        assert_eq!(pwd.to_string(), password);
+
+        let attribute: Attribute = pwd.into();
+        assert_eq!(attribute.attribute, "ice-pwd");
+        assert_eq!(attribute.value.as_deref(), Some(password));
+
+        // The shortest and longest valid passwords (RFC 5245, section 15.4).
+        let shortest = "a".repeat(22);
+        assert_eq!(shortest.parse::<IcePwd>().unwrap().to_string(), shortest);
+        assert!("a".repeat(256).parse::<IcePwd>().is_ok());
+
+        let too_long = "a".repeat(257);
+        for invalid in [
+            "",
+            "a".repeat(21).as_str(),          // shorter than 22 characters
+            too_long.as_str(),                // longer than 256 characters
+            "abcdefghijklmnopqr-stu",         // "-" is not an ICE character
+            "\u{30b0}bcdefghijklmnopqrstuvw", // non-ASCII
+        ] {
+            assert!(
+                invalid.parse::<IcePwd>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
+    }
+
+    #[test]
+    fn parse_ice_options_attribute() {
+        let options: IceOptions = "trickle".parse().unwrap();
+        assert_eq!(options, IceOptions::new(["trickle"]));
+        assert_eq!(options.to_string(), "trickle");
+
+        // Multiple tags in a single attribute (RFC 5245, section 15.5).
+        let options: IceOptions = "trickle renomination".parse().unwrap();
+        assert_eq!(options, IceOptions::new(["trickle", "renomination"]));
+        assert_eq!(options.to_string(), "trickle renomination");
+
+        let attribute: Attribute = options.into();
+        assert_eq!(attribute.attribute, "ice-options");
+        assert_eq!(attribute.value.as_deref(), Some("trickle renomination"));
+
+        for invalid in ["", "   ", "tr-ickle"] {
+            assert!(
+                invalid.parse::<IceOptions>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
+    }
+
+    #[test]
+    fn parse_end_of_candidates_attribute() {
+        assert!(matches!("".parse::<EndOfCandidates>(), Ok(EndOfCandidates)));
+
+        let attribute: Attribute = EndOfCandidates.into();
+        assert_eq!(attribute.attribute, "end-of-candidates");
+        assert_eq!(attribute.value, None);
+
+        // A property attribute must not carry a value.
+        assert!("1".parse::<EndOfCandidates>().is_err());
     }
 }
