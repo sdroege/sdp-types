@@ -3627,6 +3627,107 @@ impl TypedAttribute for MaxMessageSize {
     const NAME: &'static str = "max-message-size";
 }
 
+/// SCTP port map attribute (`a=sctpmap`)
+///
+/// Legacy association of the SCTP port with the application running on
+/// the association and the number of streams, sent as
+/// `a=sctpmap:<port> <app> [<streams>]`. It was defined only in
+/// `draft-ietf-mmusic-sctp-sdp`, never published as an RFC, and is
+/// superseded by `a=sctp-port` (RFC 8841, section 5).
+///
+/// See [draft-ietf-mmusic-sctp-sdp](https://datatracker.ietf.org/doc/html/draft-ietf-mmusic-sctp-sdp).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SctpMap {
+    /// SCTP port number, in the range 0 to 65535.
+    pub number: u16,
+    /// Application running on top of the association, e.g.
+    /// `webrtc-datachannel`.
+    pub app: String,
+    /// Number of streams supported by each side of the association.
+    pub streams: Option<u16>,
+}
+
+impl SctpMap {
+    pub fn new(number: u16, app: impl ToString, streams: Option<u16>) -> Self {
+        SctpMap {
+            number,
+            app: app.to_string(),
+            streams,
+        }
+    }
+}
+
+impl FromStr for SctpMap {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let attr = <Self as TypedAttribute>::NAME.to_string();
+        let mut tokens = s.split_whitespace();
+
+        let number = tokens.next().ok_or_else(|| AttributeError::ParamNotFound {
+            param: "SCTP port number".to_string(),
+            attr: attr.clone(),
+        })?;
+        let number = parse_1_5_digits(number).ok_or_else(|| AttributeError::InvalidParamValue {
+            param: "SCTP port number".to_string(),
+            val: number.to_string(),
+            attr: attr.clone(),
+        })?;
+
+        let app = tokens.next().ok_or_else(|| AttributeError::ParamNotFound {
+            param: "Application".to_string(),
+            attr: attr.clone(),
+        })?;
+        if !is_token(app.as_bytes()) {
+            return Err(AttributeError::InvalidParamValue {
+                param: "Application".to_string(),
+                val: app.to_string(),
+                attr,
+            });
+        }
+
+        let streams = match tokens.next() {
+            Some(streams) => Some(parse_1_5_digits(streams).ok_or_else(|| {
+                AttributeError::InvalidParamValue {
+                    param: "Stream count".to_string(),
+                    val: streams.to_string(),
+                    attr: attr.clone(),
+                }
+            })?),
+            None => None,
+        };
+
+        let trailing: Vec<_> = tokens.collect();
+        if !trailing.is_empty() {
+            return Err(AttributeError::UnexpectedTrailingItem {
+                val: trailing.join(" "),
+                attr,
+            });
+        }
+
+        Ok(SctpMap {
+            number,
+            app: app.to_string(),
+            streams,
+        })
+    }
+}
+
+impl Display for SctpMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.number, self.app)?;
+        if let Some(streams) = self.streams {
+            write!(f, " {}", streams)?;
+        }
+        Ok(())
+    }
+}
+
+impl TypedAttribute for SctpMap {
+    const NAME: &'static str = "sctpmap";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -4918,6 +5019,44 @@ a=rtcp-mux\r
         ] {
             assert!(
                 invalid.parse::<MaxMessageSize>().is_err(),
+                "expected error for {:?}",
+                invalid
+            );
+        }
+    }
+
+    #[test]
+    fn parse_sctpmap_attribute() {
+        // Real-world legacy syntax.
+        let map: SctpMap = "5000 webrtc-datachannel 256".parse().unwrap();
+        assert_eq!(map, SctpMap::new(5000, "webrtc-datachannel", Some(256)));
+        assert_eq!(map.to_string(), "5000 webrtc-datachannel 256");
+
+        let attribute: Attribute = map.into();
+        assert_eq!(attribute.attribute, "sctpmap");
+        assert_eq!(
+            attribute.value.as_deref(),
+            Some("5000 webrtc-datachannel 256")
+        );
+
+        // The stream count is optional and zero is allowed.
+        let map: SctpMap = "9 webrtc-datachannel".parse().unwrap();
+        assert_eq!(map.streams, None);
+        assert_eq!(map.to_string(), "9 webrtc-datachannel");
+        assert_eq!("0 app 0".parse::<SctpMap>().unwrap().streams, Some(0));
+
+        for invalid in [
+            "",
+            "5000",               // application missing
+            "65536 app",          // port out of range
+            "05000 app",          // leading zeroes
+            "app app",            // port not a number
+            "5000 app 70000",     // stream count out of range
+            "5000 a:pp",          // application not a token
+            "5000 app 256 extra", // trailing item
+        ] {
+            assert!(
+                invalid.parse::<SctpMap>().is_err(),
                 "expected error for {:?}",
                 invalid
             );

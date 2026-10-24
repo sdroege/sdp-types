@@ -51,6 +51,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 - `SctpPort` (`a=sctp-port`) SCTP port attribute (RFC 8841, section 5.2).
 - `MaxMessageSize` (`a=max-message-size`) maximum SCTP user message
   size attribute (RFC 8841, section 6.2).
+- `SctpMap` (`a=sctpmap`) legacy SCTP port map attribute
+  (draft-ietf-mmusic-sctp-sdp, superseded by RFC 8841).
 
 ### Changed
 - `Session::attributes_typed()`, `Media::attributes_typed()` and
