@@ -35,6 +35,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   (RFC 5761, section 5).
 - `RtcpMuxOnly` (`a=rtcp-mux-only`) RTP/RTCP multiplexing-only property
   attribute (RFC 8858, section 3).
+- `RtcpRsize` (`a=rtcp-rsize`) reduced-size RTCP property attribute
+  (RFC 5506, section 5).
 
 ### Changed
 - `Session::attributes_typed()`, `Media::attributes_typed()` and
