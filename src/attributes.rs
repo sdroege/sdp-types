@@ -23,9 +23,11 @@ pub trait TypedAttribute: Display + FromStr<Err = AttributeError> {
 
 impl<T: TypedAttribute> From<T> for Attribute {
     fn from(attr: T) -> Attribute {
+        let value = attr.to_string();
         Attribute {
             attribute: T::NAME.to_string(),
-            value: Some(attr.to_string()),
+            // Property attributes format as the empty string and carry no value.
+            value: (!value.is_empty()).then_some(value),
         }
     }
 }
@@ -1374,14 +1376,9 @@ impl Ssrc {
             });
         }
 
-        let Some(ref value) = self.value else {
-            return Err(AttributeError::Other {
-                error: "No value for the attribute".to_string(),
-                attr: T::NAME.to_string(),
-            });
-        };
-
-        T::from_str(value)
+        // Property attributes have no value; they parse the empty string,
+        // consistent with Session::attributes_typed().
+        T::from_str(self.value.as_deref().unwrap_or_default())
     }
 }
 
@@ -3130,6 +3127,79 @@ impl TypedAttribute for Mid {
     const NAME: &'static str = "mid";
 }
 
+/// RTP/RTCP multiplexing attribute (`a=rtcp-mux`)
+///
+/// Indicates that RTP and RTCP packets are sent to the same transport
+/// address and port. It is a property attribute without a value, used
+/// at the media level.
+///
+/// See [RFC 5761 Section 5](https://datatracker.ietf.org/doc/html/rfc5761#section-5).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RtcpMux;
+
+impl FromStr for RtcpMux {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if !s.is_empty() {
+            return Err(AttributeError::UnsupportedFormat {
+                val: s.to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        Ok(RtcpMux)
+    }
+}
+
+impl Display for RtcpMux {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+impl TypedAttribute for RtcpMux {
+    const NAME: &'static str = "rtcp-mux";
+}
+
+/// RTP/RTCP multiplexing-only attribute (`a=rtcp-mux-only`)
+///
+/// Indicates that the endpoint can only receive RTP/RTCP multiplexed
+/// packets, i.e. it does not accept RTCP packets on a separate
+/// transport address and port even if one is indicated. It is a
+/// property attribute without a value, used at the media level.
+///
+/// See [RFC 8858 Section 3](https://datatracker.ietf.org/doc/html/rfc8858#section-3).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RtcpMuxOnly;
+
+impl FromStr for RtcpMuxOnly {
+    type Err = AttributeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if !s.is_empty() {
+            return Err(AttributeError::UnsupportedFormat {
+                val: s.to_string(),
+                attr: <Self as TypedAttribute>::NAME.to_string(),
+            });
+        }
+
+        Ok(RtcpMuxOnly)
+    }
+}
+
+impl Display for RtcpMuxOnly {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+impl TypedAttribute for RtcpMuxOnly {
+    const NAME: &'static str = "rtcp-mux-only";
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -3730,8 +3800,8 @@ a=candidate:7 1 UDP 10 192.168.1.1 49157 typ unknown_type\r
                 .collect::<Vec<Result<RtpMap, AttributeError>>>()
                 .remove(0)
                 .unwrap_err(),
-            AttributeError::Other {
-                error: "No value for the attribute".to_string(),
+            AttributeError::UnsupportedFormat {
+                val: String::new(),
                 attr: "rtpmap".to_string()
             }
         );
@@ -4169,5 +4239,42 @@ a=rtcp:53020\r
                 invalid
             );
         }
+    }
+
+    #[test]
+    fn parse_rtcp_mux_attribute() {
+        assert_eq!("".parse::<RtcpMux>().unwrap(), RtcpMux);
+
+        let attribute: Attribute = RtcpMux.into();
+        assert_eq!(attribute.attribute, "rtcp-mux");
+        assert_eq!(attribute.value, None);
+
+        // A property attribute must not carry a value.
+        assert!("1".parse::<RtcpMux>().is_err());
+
+        let sdp = "v=0\r
+o=alice 3203093520 3203093520 IN IP4 host.example.com\r
+s=Property attribute test\r
+t=3203130148 3203137348\r
+m=audio 49170 RTP/AVP 0\r
+a=rtcp-mux\r
+";
+        let parsed = Session::parse(sdp.as_bytes()).unwrap();
+        assert_eq!(
+            parsed.medias[0].get_first_attribute_typed::<RtcpMux>(),
+            Some(Ok(RtcpMux))
+        );
+    }
+
+    #[test]
+    fn parse_rtcp_mux_only_attribute() {
+        assert!(matches!("".parse::<RtcpMuxOnly>(), Ok(RtcpMuxOnly)));
+
+        let attribute: Attribute = RtcpMuxOnly.into();
+        assert_eq!(attribute.attribute, "rtcp-mux-only");
+        assert_eq!(attribute.value, None);
+
+        // A property attribute must not carry a value.
+        assert!("1".parse::<RtcpMuxOnly>().is_err());
     }
 }

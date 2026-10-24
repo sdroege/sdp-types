@@ -817,14 +817,8 @@ impl Media {
             .iter()
             .filter(move |a| a.attribute.eq_ignore_ascii_case(T::NAME))
             .map(|a| {
-                let Some(s) = &a.value else {
-                    return Err(AttributeError::Other {
-                        error: "No value for the attribute".to_string(),
-                        attr: T::NAME.to_string(),
-                    });
-                };
-
-                T::from_str(s)
+                // Property attributes have no value; they parse the empty string.
+                T::from_str(a.value.as_deref().unwrap_or_default())
             })
     }
 }
@@ -1027,14 +1021,8 @@ impl Session {
             .iter()
             .filter(move |a| a.attribute.eq_ignore_ascii_case(T::NAME))
             .map(|a| {
-                let Some(s) = &a.value else {
-                    return Err(AttributeError::Other {
-                        error: "No value for the attribute".to_string(),
-                        attr: T::NAME.to_string(),
-                    });
-                };
-
-                T::from_str(s)
+                // Property attributes have no value; they parse the empty string.
+                T::from_str(a.value.as_deref().unwrap_or_default())
             })
     }
 }

@@ -31,8 +31,18 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   same as `Session::write()`.
 - `Mid` (`a=mid`) media stream identification tag attribute
   (RFC 5888, section 4).
+- `RtcpMux` (`a=rtcp-mux`) RTP/RTCP multiplexing property attribute
+  (RFC 5761, section 5).
+- `RtcpMuxOnly` (`a=rtcp-mux-only`) RTP/RTCP multiplexing-only property
+  attribute (RFC 8858, section 3).
 
 ### Changed
+- `Session::attributes_typed()`, `Media::attributes_typed()` and
+  `Attribute::get_typed()` pass an empty string to attributes without a value
+  instead of failing with `AttributeError::Other`, so property attributes can
+  be looked up as typed attributes.
+- The blanket `From<T: TypedAttribute> for Attribute` now stores `value: None`
+  for attributes that format as the empty string (property attributes).
 - `Connection::try_parse_connection_ip_address()` now ignores an optional
   time-to-live suffix in `address/ttl` notation (RFC 8866, section 5.7)
   instead of failing to parse the address.
