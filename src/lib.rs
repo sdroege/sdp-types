@@ -222,11 +222,25 @@ pub struct Connection {
 impl Connection {
     /// Construct a [`Connection`] with the specified IP `connection_address`
     pub fn from_ip_addr(connection_address: impl Into<IpAddr>) -> Self {
-        let connection_address = connection_address.into();
+        Self::from_ip_addr_ttl(connection_address, None)
+    }
+
+    /// Construct a [`Connection`] with the specified IP `connection_address`
+    /// and IPv4 multicast time-to-live in `address/ttl` notation
+    /// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7))
+    ///
+    /// The time-to-live is only defined for IPv4 multicast sessions and is
+    /// ignored for IPv6 addresses.
+    pub fn from_ip_addr_ttl(connection_address: impl Into<IpAddr>, ttl: Option<u8>) -> Self {
+        let ip = connection_address.into();
+        let connection_address = match ttl {
+            Some(ttl) if ip.is_ipv4() => format!("{ip}/{ttl}"),
+            _ => ip.to_string(),
+        };
         Connection {
             nettype: NetType::In,
-            addrtype: connection_address.into(),
-            connection_address: connection_address.to_string(),
+            addrtype: ip.into(),
+            connection_address,
         }
     }
 
@@ -250,13 +264,165 @@ impl Connection {
 
     /// Tries to parse the `connection_address` `String` of `self` as `IpAddr`
     ///
+    /// An optional time-to-live suffix in `address/ttl` notation
+    /// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7))
+    /// is ignored, see [`Connection::try_address`].
+    ///
     /// Returns the `Ok` with the parsed `IpAddr` or `Err` with the string address
     /// if parsing failed.
+    #[deprecated(since = "0.3.1", note = "use Connection::try_address instead")]
     pub fn try_parse_connection_ip_address(&self) -> Result<IpAddr, &str> {
-        self.connection_address
-            .parse::<IpAddr>()
-            .map_err(|_| self.connection_address.as_str())
+        parse_connection_ip_address(&self.connection_address)
     }
+
+    /// Parses the `connection_address` into its components
+    /// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7))
+    ///
+    /// The address must parse as an [`IpAddr`]; an IPv4 multicast
+    /// time-to-live and a number-of-addresses suffix must parse as numbers.
+    /// A time-to-live is only defined for "IP4", for "IP6" the only suffix
+    /// is the address count.
+    ///
+    /// Returns the parsed [`ConnectionAddress`] or a [`ConnectionAddressError`]
+    /// for the first invalid component.
+    pub fn try_address(&self) -> Result<ConnectionAddress, ConnectionAddressError> {
+        let ip = parse_connection_ip_address(&self.connection_address)
+            .map_err(|_| ConnectionAddressError::InvalidAddress(self.connection_address.clone()))?;
+        let ttl = match parse_ttl(&self.connection_address, &self.addrtype) {
+            Some(Ok(ttl)) => Some(ttl),
+            Some(Err(_)) => {
+                return Err(ConnectionAddressError::InvalidTtl(
+                    self.connection_address.clone(),
+                ));
+            }
+            None => None,
+        };
+        let count = match parse_number_of_addresses(&self.connection_address, &self.addrtype) {
+            Some(Ok(count)) => Some(count),
+            Some(Err(_)) => {
+                return Err(ConnectionAddressError::InvalidCount(
+                    self.connection_address.clone(),
+                ));
+            }
+            None => None,
+        };
+
+        Ok(ConnectionAddress { ip, ttl, count })
+    }
+
+    /// Whether the `connection_address` is an IP multicast address
+    ///
+    /// Returns `false` if the address cannot be parsed as an [`IpAddr`], see
+    /// [`Connection::try_is_multicast`] for a variant with the error.
+    pub fn is_multicast(&self) -> bool {
+        parse_connection_ip_address(&self.connection_address)
+            .map(|address| address.is_multicast())
+            .unwrap_or(false)
+    }
+
+    /// Like [`Connection::is_multicast`] but returns the parse error instead
+    /// of `false` if the address cannot be parsed. Only the address itself
+    /// is considered, invalid TTL or address-count suffixes do not error.
+    pub fn try_is_multicast(&self) -> Result<bool, ConnectionAddressError> {
+        parse_connection_ip_address(&self.connection_address)
+            .map(|address| address.is_multicast())
+            .map_err(|_| ConnectionAddressError::InvalidAddress(self.connection_address.clone()))
+    }
+
+    /// Whether the `connection_address` is an IPv4 address
+    ///
+    /// Returns `false` if the address cannot be parsed as an [`IpAddr`].
+    pub fn is_ipv4(&self) -> bool {
+        parse_connection_ip_address(&self.connection_address)
+            .map(|address| address.is_ipv4())
+            .unwrap_or(false)
+    }
+
+    /// Whether the `connection_address` is an IPv6 address
+    ///
+    /// Returns `false` if the address cannot be parsed as an [`IpAddr`].
+    pub fn is_ipv6(&self) -> bool {
+        parse_connection_ip_address(&self.connection_address)
+            .map(|address| address.is_ipv6())
+            .unwrap_or(false)
+    }
+}
+
+/// A parsed SDP connection address ([RFC 8866
+/// Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)), see
+/// [`Connection::try_address`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ConnectionAddress {
+    /// The address itself.
+    pub ip: IpAddr,
+    /// The IPv4 multicast time-to-live, only present for "IP4".
+    pub ttl: Option<u8>,
+    /// The number of subsequent group addresses of layered/multigroup
+    /// multicast sessions.
+    pub count: Option<u8>,
+}
+
+/// Errors of [`Connection::try_address`].
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ConnectionAddressError {
+    /// The address is not a valid [`IpAddr`], the `String` is the raw
+    /// connection address.
+    #[error("invalid connection address '{0}'")]
+    InvalidAddress(String),
+    /// The address is valid but its IPv4 multicast time-to-live suffix is
+    /// not a number, the `String` is the raw connection address.
+    #[error("invalid time-to-live in connection address '{0}'")]
+    InvalidTtl(String),
+    /// The address is valid but its number-of-addresses suffix is not a
+    /// number, the `String` is the raw connection address.
+    #[error("invalid address count in connection address '{0}'")]
+    InvalidCount(String),
+}
+
+/// Tries to parse an SDP connection address as `IpAddr`, ignoring an
+/// optional `/ttl` and `/number of addresses` suffix
+/// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+///
+/// Returns `Err` with the original string if parsing failed.
+pub(crate) fn parse_connection_ip_address(address: &str) -> Result<IpAddr, &str> {
+    let ip_part = match address.split_once('/') {
+        Some((ip_part, _suffix)) => ip_part,
+        None => address,
+    };
+    ip_part.parse::<IpAddr>().map_err(|_| address)
+}
+
+/// Tries to parse the IPv4 multicast time-to-live suffix of an SDP
+/// connection address in `address/ttl` notation
+/// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+pub(crate) fn parse_ttl<'a>(address: &'a str, addrtype: &AddrType) -> Option<Result<u8, &'a str>> {
+    if addrtype != &AddrType::Ip4 {
+        return None;
+    }
+
+    let rest = address.split_once('/')?.1;
+    let ttl = match rest.split_once('/') {
+        Some((ttl, _count)) => ttl,
+        None => rest,
+    };
+    Some(ttl.parse::<u8>().map_err(|_| ttl))
+}
+
+/// Tries to parse the number-of-addresses suffix of an SDP connection
+/// address for layered/multigroup sessions
+/// ([RFC 8866 Section 5.7](https://tools.ietf.org/html/rfc8866#section-5.7)).
+pub(crate) fn parse_number_of_addresses<'a>(
+    address: &'a str,
+    addrtype: &AddrType,
+) -> Option<Result<u8, &'a str>> {
+    let rest = address.split_once('/')?.1;
+    let count = match addrtype {
+        AddrType::Ip4 => rest.split_once('/')?.1,
+        AddrType::Ip6 => rest,
+        AddrType::Other(_) => return None,
+    };
+    Some(count.parse::<u8>().map_err(|_| count))
 }
 
 impl<T: Into<IpAddr>> From<T> for Connection {
@@ -1261,6 +1427,7 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
     }
 
     #[test]
+    #[allow(deprecated)]
     fn connection_parse_address_error() {
         use std::net::Ipv6Addr;
 
@@ -1276,10 +1443,11 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
             IpAddr::V4(Ipv4Addr::LOCALHOST),
         );
 
+        // A time-to-live suffix is not part of the address itself.
         connection.connection_address = "127.0.0.1/24".to_string();
         assert_eq!(
-            connection.try_parse_connection_ip_address().unwrap_err(),
-            connection.connection_address
+            connection.try_parse_connection_ip_address().unwrap(),
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
         );
 
         connection.connection_address = "non-ip".to_string();
@@ -1294,6 +1462,128 @@ a=extmap:2/sendrecv http://example.com/082005/ext.htm#xmeta short\r
             connection.try_parse_connection_ip_address().unwrap(),
             IpAddr::V6(Ipv6Addr::LOCALHOST),
         );
+    }
+
+    #[test]
+    fn connection_try_is_multicast() {
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1");
+        assert_eq!(connection.try_is_multicast(), Ok(true));
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "127.0.0.1");
+        assert_eq!(connection.try_is_multicast(), Ok(false));
+
+        // Invalid suffixes do not affect the address itself.
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/x");
+        assert_eq!(connection.try_is_multicast(), Ok(true));
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "x/16");
+        assert_eq!(
+            connection.try_is_multicast().unwrap_err(),
+            ConnectionAddressError::InvalidAddress("x/16".into())
+        );
+    }
+
+    #[test]
+    fn connection_is_ipv4_ipv6() {
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/16");
+        assert!(connection.is_ipv4());
+        assert!(!connection.is_ipv6());
+
+        let connection = Connection::new(NetType::In, AddrType::Ip6, "ff12::5/3");
+        assert!(connection.is_ipv6());
+        assert!(!connection.is_ipv4());
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "x/16");
+        assert!(!connection.is_ipv4());
+        assert!(!connection.is_ipv6());
+    }
+
+    #[test]
+    fn connection_try_address() {
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/16/2");
+        assert_eq!(
+            connection.try_address().unwrap(),
+            ConnectionAddress {
+                ip: "224.2.1.1".parse().unwrap(),
+                ttl: Some(16),
+                count: Some(2),
+            }
+        );
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/16");
+        assert_eq!(
+            connection.try_address().unwrap(),
+            ConnectionAddress {
+                ip: "224.2.1.1".parse().unwrap(),
+                ttl: Some(16),
+                count: None,
+            }
+        );
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "127.0.0.1");
+        assert_eq!(
+            connection.try_address().unwrap(),
+            ConnectionAddress {
+                ip: "127.0.0.1".parse().unwrap(),
+                ttl: None,
+                count: None,
+            }
+        );
+
+        // For "IP6" the suffix is an address count, not a TTL.
+        let connection = Connection::new(NetType::In, AddrType::Ip6, "ff12::5/3");
+        assert_eq!(
+            connection.try_address().unwrap(),
+            ConnectionAddress {
+                ip: "ff12::5".parse().unwrap(),
+                ttl: None,
+                count: Some(3),
+            }
+        );
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "x/16");
+        assert_eq!(
+            connection.try_address().unwrap_err(),
+            ConnectionAddressError::InvalidAddress("x/16".into())
+        );
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/x");
+        assert_eq!(
+            connection.try_address().unwrap_err(),
+            ConnectionAddressError::InvalidTtl("224.2.1.1/x".into())
+        );
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/300");
+        assert_eq!(
+            connection.try_address().unwrap_err(),
+            ConnectionAddressError::InvalidTtl("224.2.1.1/300".into())
+        );
+
+        let connection = Connection::new(NetType::In, AddrType::Ip4, "224.2.1.1/16/x");
+        assert_eq!(
+            connection.try_address().unwrap_err(),
+            ConnectionAddressError::InvalidCount("224.2.1.1/16/x".into())
+        );
+    }
+
+    #[test]
+    fn connection_from_ip_addr_ttl() {
+        use std::net::Ipv6Addr;
+
+        let connection = Connection::from_ip_addr_ttl(Ipv4Addr::new(224, 2, 1, 1), Some(16));
+        assert_eq!(connection.nettype, NetType::In);
+        assert_eq!(connection.addrtype, AddrType::Ip4);
+        assert_eq!(connection.connection_address, "224.2.1.1/16");
+
+        // A TTL is only defined for IPv4 multicast, an IPv6 suffix would be
+        // an address count, so the TTL is ignored here.
+        let connection =
+            Connection::from_ip_addr_ttl(Ipv6Addr::new(0xff12, 0, 0, 0, 0, 0, 0, 5), Some(16));
+        assert_eq!(connection.addrtype, AddrType::Ip6);
+        assert_eq!(connection.connection_address, "ff12::5");
+
+        let connection = Connection::from_ip_addr_ttl(Ipv4Addr::new(224, 2, 1, 1), None);
+        assert_eq!(connection.connection_address, "224.2.1.1");
     }
 
     #[test]

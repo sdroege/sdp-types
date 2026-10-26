@@ -13,6 +13,23 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 - `KeyMgmt` (`a=key-mgmt`) attribute and `KeyMgmtMethod` enum (RFC 4567).
 - `RemoteCandidates` (`a=remote-candidates`) attribute and `RemoteCandidate`
   (RFC 5245, RFC 8839).
+- `Connection::is_multicast()`, `Connection::try_is_multicast()`,
+  `Connection::is_ipv4()` and `Connection::is_ipv6()` classification helpers.
+- `Connection::from_ip_addr_ttl()` constructor with an IPv4 multicast
+  time-to-live in `address/ttl` notation (RFC 8866, section 5.7).
+- `Connection::try_address()` with `ConnectionAddress` and
+  `ConnectionAddressError`, parsing all components of a connection address
+  (RFC 8866, section 5.7) at once.
+
+### Changed
+- `Connection::try_parse_connection_ip_address()` now ignores an optional
+  time-to-live suffix in `address/ttl` notation (RFC 8866, section 5.7)
+  instead of failing to parse the address.
+
+### Deprecated
+- `Connection::try_parse_connection_ip_address()`, superseded by
+  `Connection::try_address()` which parses all components at once and
+  returns typed errors.
 
 ## [0.3.0]
 ### Fixed
