@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
 ## [Unreleased]
+
+## [0.3.1]
 ### Added
 - `TransportProto`: Classification helpers `is_rtp()`, `is_sctp()`, `is_secure()`
   and `is_avpf()`.
@@ -205,7 +207,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ## 0.1.0 - 2019-12-23
 - Initial release of the `sdp-types` crate.
 
-[Unreleased]: https://github.com/sdroege/sdp-types/compare/0.3.0...HEAD
+[Unreleased]: https://github.com/sdroege/sdp-types/compare/0.3.1...HEAD
+[0.3.1]: https://github.com/sdroege/sdp-types/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/sdroege/sdp-types/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/sdroege/sdp-types/compare/0.1.8...0.2.0
 [0.1.8]: https://github.com/sdroege/sdp-types/compare/0.1.7...0.1.8
