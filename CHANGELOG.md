@@ -9,6 +9,9 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ### Added
 - `GroupSemantics::Bundle` for the BUNDLE group semantics (RFC 8843, section 5).
 
+### Fixed
+- `a=group` without identification tags is accepted (RFC 5888, section 5).
+
 ## [0.3.1]
 ### Added
 - `TransportProto`: Classification helpers `is_rtp()`, `is_sctp()`, `is_secure()`

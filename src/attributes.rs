@@ -1193,6 +1193,11 @@ impl TypedAttribute for Fingerprint {
 /// Group Attribute
 ///
 /// See [RFC 5888 Section 5](https://datatracker.ietf.org/doc/html/rfc5888#section-5)
+///
+/// The list of identification tags is optional in the grammar, so a group
+/// without any tag is valid and groups no media description. Receivers have to
+/// ignore it, and grouping semantics that need at least one tag, such as BUNDLE
+/// (RFC 8843, section 5), have to be rejected by the application.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Group {
@@ -1224,7 +1229,7 @@ impl FromStr for Group {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut i = s.split(' ');
 
-        let Some(semantics) = i.next() else {
+        let Some(semantics) = i.next().filter(|semantics| !semantics.is_empty()) else {
             return Err(AttributeError::ParamNotFound {
                 param: "Semantics".to_string(),
                 attr: <Self as TypedAttribute>::NAME.to_string(),
@@ -1236,13 +1241,6 @@ impl FromStr for Group {
         let mut mid_tags = vec![];
         for mid in i {
             mid_tags.push(mid.to_string());
-        }
-
-        if mid_tags.is_empty() {
-            return Err(AttributeError::ParamNotFound {
-                param: "Media identification tags".to_string(),
-                attr: <Self as TypedAttribute>::NAME.to_string(),
-            });
         }
 
         Ok(Self {
@@ -4218,15 +4216,16 @@ a=candidate:7 1 UDP 10 192.168.1.1 49157 typ unknown_type\r
         assert_eq!(
             "".parse::<Group>().unwrap_err(),
             AttributeError::ParamNotFound {
-                param: "Media identification tags".to_string(),
+                param: "Semantics".to_string(),
                 attr: "group".to_string()
             }
         );
+        // The identification tags are optional in the grammar.
         assert_eq!(
-            "LS".parse::<Group>().unwrap_err(),
-            AttributeError::ParamNotFound {
-                param: "Media identification tags".to_string(),
-                attr: "group".to_string()
+            "LS".parse::<Group>().unwrap(),
+            Group {
+                semantics: GroupSemantics::LS,
+                mid_tags: vec![],
             }
         );
 
