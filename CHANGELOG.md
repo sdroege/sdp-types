@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
 ## [Unreleased]
+### Added
+- `GroupSemantics::Bundle` for the BUNDLE group semantics (RFC 8843, section 5).
 
 ## [0.3.1]
 ### Added

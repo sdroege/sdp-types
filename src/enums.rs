@@ -557,9 +557,10 @@ impl HashFunc {
     }
 }
 
-/// Semantics for Group Attribute
+/// Semantics for the `group` and `ssrc-group` attributes
 ///
-/// See [RFC 5576 Section 12.3](https://datatracker.ietf.org/doc/html/rfc5576#section-12.3)
+/// See [RFC 5888 Section 5](https://datatracker.ietf.org/doc/html/rfc5888#section-5)
+/// and [RFC 5576 Section 12.3](https://datatracker.ietf.org/doc/html/rfc5576#section-12.3)
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum GroupSemantics {
@@ -587,6 +588,10 @@ pub enum GroupSemantics {
     ///
     /// See [RFC 5583 Section 5.2.1](https://datatracker.ietf.org/doc/html/rfc5583#section-5.2.1)
     DDP,
+    /// Media Multiplexing
+    ///
+    /// See [RFC 8843 Section 5](https://datatracker.ietf.org/doc/html/rfc8843#section-5)
+    Bundle,
     /// Other Semantics
     Other(String),
 }
@@ -607,6 +612,8 @@ impl GroupSemantics {
             GroupSemantics::FEC
         } else if "DDP".eq_ignore_ascii_case(semantics) {
             GroupSemantics::DDP
+        } else if "BUNDLE".eq_ignore_ascii_case(semantics) {
+            GroupSemantics::Bundle
         } else {
             GroupSemantics::Other(semantics.to_string())
         }
@@ -620,6 +627,7 @@ impl GroupSemantics {
             GroupSemantics::ANAT => "ANAT",
             GroupSemantics::DDP => "DDP",
             GroupSemantics::FEC => "FEC",
+            GroupSemantics::Bundle => "BUNDLE",
             GroupSemantics::Other(s) => s.as_str(),
         }
     }
@@ -1159,6 +1167,45 @@ mod tests {
             assert_eq!(proto.is_sctp(), sctp, "{:?} is_sctp", proto);
             assert_eq!(proto.is_secure(), secure, "{:?} is_secure", proto);
             assert_eq!(proto.is_avpf(), avpf, "{:?} is_avpf", proto);
+        }
+    }
+
+    #[test]
+    fn group_semantics_case() {
+        // Registered semantics are matched case-insensitively, but an unknown
+        // one has no registered spelling to be normalized to.
+        let cases = [
+            ("ls", GroupSemantics::LS),
+            ("LS", GroupSemantics::LS),
+            ("fid", GroupSemantics::FID),
+            ("srf", GroupSemantics::SRF),
+            ("anat", GroupSemantics::ANAT),
+            ("fec", GroupSemantics::FEC),
+            ("ddp", GroupSemantics::DDP),
+            ("bundle", GroupSemantics::Bundle),
+            ("Bundle", GroupSemantics::Bundle),
+            ("BUNDLE", GroupSemantics::Bundle),
+            ("foo", GroupSemantics::Other("foo".to_string())),
+        ];
+
+        for (value, semantics) in cases {
+            assert_eq!(GroupSemantics::new(value), semantics, "{value}");
+        }
+
+        // The registered spelling is what is written back out.
+        let cases = [
+            (GroupSemantics::LS, "LS"),
+            (GroupSemantics::FID, "FID"),
+            (GroupSemantics::SRF, "SRF"),
+            (GroupSemantics::ANAT, "ANAT"),
+            (GroupSemantics::FEC, "FEC"),
+            (GroupSemantics::DDP, "DDP"),
+            (GroupSemantics::Bundle, "BUNDLE"),
+            (GroupSemantics::Other("foo".to_string()), "foo"),
+        ];
+
+        for (semantics, value) in cases {
+            assert_eq!(semantics.as_str(), value, "{semantics:?}");
         }
     }
 }

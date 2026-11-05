@@ -1522,19 +1522,9 @@ impl FromStr for SsrcGroup {
 
 impl Display for SsrcGroup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let sem = match &self.semantics {
-            GroupSemantics::FEC => "FEC",
-            GroupSemantics::FID => "FID",
-            // Semantics other than FEC and FID are not useful for source grouping but still displaying
-            // them for debugging purpose
-            GroupSemantics::LS => "LS",
-            GroupSemantics::SRF => "SRF",
-            GroupSemantics::ANAT => "ANAT",
-            GroupSemantics::DDP => "DDP",
-            GroupSemantics::Other(s) => s.as_str(),
-        };
-
-        f.write_str(sem)?;
+        // Semantics other than FEC and FID are not useful for source grouping
+        // but still displayed for debugging purpose.
+        f.write_str(self.semantics.as_str())?;
         for ssrc_id in &self.ssrc_ids {
             f.write_char(' ')?;
             write!(f, "{ssrc_id}")?;
