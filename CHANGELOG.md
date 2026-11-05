@@ -12,6 +12,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ### Changed
 - `a=group` and `a=ssrc-group` parsing treats runs of whitespace as a single
   separator, and `a=group` is written back with single spaces.
+- `a=ice-options`, `a=msid`, `a=remote-candidates` and `a=sctpmap` only split
+  their fields on ASCII whitespace.
 
 ### Fixed
 - `a=group` without identification tags is accepted (RFC 5888, section 5).

@@ -2631,7 +2631,7 @@ impl FromStr for RemoteCandidate {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let attr = <RemoteCandidates as TypedAttribute>::NAME.to_string();
-        let mut parts = s.split_whitespace();
+        let mut parts = s.split_ascii_whitespace();
 
         let component_id_token = parts.next().ok_or_else(|| AttributeError::ParamNotFound {
             param: "Component ID".to_string(),
@@ -2716,7 +2716,7 @@ impl FromStr for RemoteCandidates {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let attr = <Self as TypedAttribute>::NAME.to_string();
-        let mut tokens = s.split_whitespace();
+        let mut tokens = s.split_ascii_whitespace();
         let mut candidates = Vec::new();
 
         // Every entry consists of exactly three tokens.
@@ -3372,7 +3372,7 @@ impl FromStr for IceOptions {
         let attr = <Self as TypedAttribute>::NAME.to_string();
         let mut tags = Vec::new();
 
-        for tag in s.split_whitespace() {
+        for tag in s.split_ascii_whitespace() {
             if !tag.chars().all(is_ice_char) {
                 return Err(AttributeError::InvalidParamValue {
                     param: "ICE option tag".to_string(),
@@ -3477,7 +3477,7 @@ impl FromStr for Msid {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let attr = <Self as TypedAttribute>::NAME.to_string();
-        let mut tokens = s.split_whitespace();
+        let mut tokens = s.split_ascii_whitespace();
 
         let id = tokens.next().ok_or_else(|| AttributeError::ParamNotFound {
             param: "MSID id".to_string(),
@@ -3659,7 +3659,7 @@ impl FromStr for SctpMap {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let attr = <Self as TypedAttribute>::NAME.to_string();
-        let mut tokens = s.split_whitespace();
+        let mut tokens = s.split_ascii_whitespace();
 
         let number = tokens.next().ok_or_else(|| AttributeError::ParamNotFound {
             param: "SCTP port number".to_string(),
