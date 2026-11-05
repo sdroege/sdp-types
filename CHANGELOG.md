@@ -9,6 +9,10 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ### Added
 - `GroupSemantics::Bundle` for the BUNDLE group semantics (RFC 8843, section 5).
 
+### Changed
+- `a=group` and `a=ssrc-group` parsing treats runs of whitespace as a single
+  separator, and `a=group` is written back with single spaces.
+
 ### Fixed
 - `a=group` without identification tags is accepted (RFC 5888, section 5).
 

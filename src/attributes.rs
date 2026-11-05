@@ -1195,9 +1195,12 @@ impl TypedAttribute for Fingerprint {
 /// See [RFC 5888 Section 5](https://datatracker.ietf.org/doc/html/rfc5888#section-5)
 ///
 /// The list of identification tags is optional in the grammar, so a group
-/// without any tag is valid and groups no media description. Receivers have to
-/// ignore it, and grouping semantics that need at least one tag, such as BUNDLE
-/// (RFC 8843, section 5), have to be rejected by the application.
+/// without any tag is valid and simply groups no media description. Grouping
+/// semantics that need at least one tag, such as BUNDLE (RFC 8843, section 5),
+/// have to be rejected by the application.
+///
+/// The grammar separates the semantics and the tags with a single space, but
+/// any whitespace is accepted when parsing and a single space is written back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Group {
@@ -1227,9 +1230,12 @@ impl FromStr for Group {
     type Err = AttributeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut i = s.split(' ');
+        // Runs of whitespace are a single separator, so that no tag can end up
+        // empty. Identification tags are tokens, so they cannot contain
+        // whitespace.
+        let mut i = s.split_ascii_whitespace();
 
-        let Some(semantics) = i.next().filter(|semantics| !semantics.is_empty()) else {
+        let Some(semantics) = i.next() else {
             return Err(AttributeError::ParamNotFound {
                 param: "Semantics".to_string(),
                 attr: <Self as TypedAttribute>::NAME.to_string(),
@@ -1472,7 +1478,9 @@ impl FromStr for SsrcGroup {
     type Err = AttributeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut i = s.split(' ');
+        // Like the group attribute, treat runs of whitespace as a single
+        // separator.
+        let mut i = s.split_ascii_whitespace();
 
         let Some(semantics) = i.next() else {
             return Err(AttributeError::ParamNotFound {
@@ -4228,6 +4236,17 @@ a=candidate:7 1 UDP 10 192.168.1.1 49157 typ unknown_type\r
                 mid_tags: vec![],
             }
         );
+        // Sloppy senders separate the fields with other whitespace than a
+        // single space, which must not produce empty tags.
+        let group = "bundle\t0  1 ".parse::<Group>().unwrap();
+        assert_eq!(group.semantics, GroupSemantics::Bundle);
+        assert_eq!(group.mid_tags, vec!["0".to_string(), "1".to_string()]);
+        assert_eq!(group.to_string(), "BUNDLE 0 1");
+
+        // Ssrc groups split on runs of whitespace as well.
+        let ssrc_group = "FEC\t123  456".parse::<SsrcGroup>().unwrap();
+        assert_eq!(ssrc_group.semantics, GroupSemantics::FEC);
+        assert_eq!(ssrc_group.ssrc_ids, vec![123, 456]);
 
         // Test Ssrc error paths
         assert_eq!(
