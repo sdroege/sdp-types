@@ -1373,7 +1373,7 @@ impl Ssrc {
     ///   the specified `TypedAttribute` or if the value is empty.
     /// * a specific `AttributeError` if the typed attribute couldn't be built.
     pub fn get_typed<T: TypedAttribute>(&self) -> Result<T, AttributeError> {
-        if !self.attribute.as_str().eq_ignore_ascii_case(T::NAME) {
+        if self.attribute.as_str() != T::NAME {
             return Err(AttributeError::Other {
                 error: format!("Attribute type mismatch (requested {})", T::NAME),
                 attr: self.attribute.as_str().to_string(),
