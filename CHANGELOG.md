@@ -14,6 +14,16 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   separator, and `a=group` is written back with single spaces.
 - `a=ice-options`, `a=msid`, `a=remote-candidates` and `a=sctpmap` only split
   their fields on ASCII whitespace.
+- Attribute names are matched case-sensitively now on `Session` and `Media`
+  (`has_attribute()`, `get_attribute_values()`, `get_first_attribute_value()`,
+  `attributes_typed()`, `get_first_attribute_typed()`), in
+  `Attribute::get_typed()` and for the `a=ssrc` sub-attribute names.
+  Per RFC 8866 (section 5) attribute names are case-significant, and a name
+  that only matches a registered one ignoring case is not registered itself
+  and must be ignored (section 5.13). This also matches libwebrtc,
+  libgstsdp, pion/sdp and the webrtc-rs sdp crate.
+  This is a breaking change: lookups no longer find attributes whose name
+  only matches ignoring case.
 
 ### Fixed
 - `a=group` without identification tags is accepted (RFC 5888, section 5).

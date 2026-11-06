@@ -1040,21 +1040,14 @@ impl SsrcAttribute {
     pub fn new(attribute: impl AsRef<str>) -> Self {
         use crate::{Fmtp, MediaClockSource, ReferenceClock, Rtcp};
 
-        let attr = attribute.as_ref();
-        if "cname".eq_ignore_ascii_case(attr) {
-            SsrcAttribute::Cname
-        } else if "previous-ssrc".eq_ignore_ascii_case(attr) {
-            SsrcAttribute::PreviousSsrc
-        } else if <Fmtp as TypedAttribute>::NAME.eq_ignore_ascii_case(attr) {
-            SsrcAttribute::Fmtp
-        } else if <Rtcp as TypedAttribute>::NAME.eq_ignore_ascii_case(attr) {
-            SsrcAttribute::Rtcp
-        } else if <ReferenceClock as TypedAttribute>::NAME.eq_ignore_ascii_case(attr) {
-            SsrcAttribute::ReferenceClock
-        } else if <MediaClockSource as TypedAttribute>::NAME.eq_ignore_ascii_case(attr) {
-            SsrcAttribute::MediaClockSource
-        } else {
-            SsrcAttribute::Other(attr.to_string())
+        match attribute.as_ref() {
+            "cname" => SsrcAttribute::Cname,
+            "previous-ssrc" => SsrcAttribute::PreviousSsrc,
+            <Fmtp as TypedAttribute>::NAME => SsrcAttribute::Fmtp,
+            <Rtcp as TypedAttribute>::NAME => SsrcAttribute::Rtcp,
+            <ReferenceClock as TypedAttribute>::NAME => SsrcAttribute::ReferenceClock,
+            <MediaClockSource as TypedAttribute>::NAME => SsrcAttribute::MediaClockSource,
+            other => SsrcAttribute::Other(other.to_string()),
         }
     }
 
