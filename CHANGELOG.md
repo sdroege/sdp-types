@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-version-field).
 
 ## [Unreleased]
+
+## [0.3.2] - 2026-11-06
 ### Added
 - `GroupSemantics::Bundle` for the BUNDLE group semantics (RFC 8843, section 5).
 
@@ -34,7 +36,7 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ### Fixed
 - `a=group` without identification tags is accepted (RFC 5888, section 5).
 
-## [0.3.1]
+## [0.3.1] - 2026-10-27
 ### Added
 - `TransportProto`: Classification helpers `is_rtp()`, `is_sctp()`, `is_secure()`
   and `is_avpf()`.
@@ -103,7 +105,7 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   `Connection::try_address()` and `Rtcp::try_address()` which parse all
   components at once and return typed errors.
 
-## [0.3.0]
+## [0.3.0] - 2026-10-23
 ### Fixed
 - Parser: reject repeat (`r=`) lines without a preceding time (`t=`) line
   (RFC 8866, section 4) instead of silently dropping them.
@@ -165,7 +167,7 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   This is a breaking change: attribute values with other characters in
   these fields now fail to parse with `AttributeError::InvalidParamValue`.
 
-## [0.2.0]
+## [0.2.0] - 2026-07-30
 ### Improved
 - Ignore trailing spaces in some fields.
 
@@ -234,7 +236,8 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
 ## 0.1.0 - 2019-12-23
 - Initial release of the `sdp-types` crate.
 
-[Unreleased]: https://github.com/sdroege/sdp-types/compare/0.3.1...HEAD
+[Unreleased]: https://github.com/sdroege/sdp-types/compare/0.3.2...HEAD
+[0.3.2]: https://github.com/sdroege/sdp-types/compare/0.3.1...0.3.2
 [0.3.1]: https://github.com/sdroege/sdp-types/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/sdroege/sdp-types/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/sdroege/sdp-types/compare/0.1.8...0.2.0
