@@ -68,17 +68,13 @@ impl FromStr for NetType {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if "IN".eq_ignore_ascii_case(s) {
-            Ok(NetType::In)
-        } else if "TN".eq_ignore_ascii_case(s) {
-            Ok(NetType::Tn)
-        } else if "ATM".eq_ignore_ascii_case(s) {
-            Ok(NetType::Atm)
-        } else if "PSTN".eq_ignore_ascii_case(s) {
-            Ok(NetType::Pstn)
-        } else {
-            Ok(NetType::Other(s.to_string()))
-        }
+        Ok(match s {
+            "IN" => NetType::In,
+            "TN" => NetType::Tn,
+            "ATM" => NetType::Atm,
+            "PSTN" => NetType::Pstn,
+            other => NetType::Other(other.to_string()),
+        })
     }
 }
 
@@ -111,13 +107,10 @@ pub enum AddrType {
 
 impl AddrType {
     pub fn new(addrtype: impl AsRef<str>) -> Self {
-        let addrtype = addrtype.as_ref();
-        if "IP4".eq_ignore_ascii_case(addrtype) {
-            AddrType::Ip4
-        } else if "IP6".eq_ignore_ascii_case(addrtype) {
-            AddrType::Ip6
-        } else {
-            AddrType::Other(addrtype.to_string())
+        match addrtype.as_ref() {
+            "IP4" => AddrType::Ip4,
+            "IP6" => AddrType::Ip6,
+            other => AddrType::Other(other.to_string()),
         }
     }
 
@@ -140,13 +133,11 @@ impl FromStr for AddrType {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if "IP4".eq_ignore_ascii_case(s) {
-            Ok(AddrType::Ip4)
-        } else if "IP6".eq_ignore_ascii_case(s) {
-            Ok(AddrType::Ip6)
-        } else {
-            Ok(AddrType::Other(s.to_string()))
-        }
+        Ok(match s {
+            "IP4" => AddrType::Ip4,
+            "IP6" => AddrType::Ip6,
+            other => AddrType::Other(other.to_string()),
+        })
     }
 }
 
@@ -202,16 +193,12 @@ impl FromStr for BandwidthType {
     type Err = ParseEnumError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if "AS".eq_ignore_ascii_case(s) {
-            Ok(BandwidthType::As)
-        } else if "CT".eq_ignore_ascii_case(s) {
-            Ok(BandwidthType::Ct)
-        } else if "RR".eq_ignore_ascii_case(s) {
-            Ok(BandwidthType::Rr)
-        } else if "RS".eq_ignore_ascii_case(s) {
-            Ok(BandwidthType::Rs)
-        } else {
-            Err(ParseEnumError::Invalid(s.to_string()))
+        match s {
+            "AS" => Ok(BandwidthType::As),
+            "CT" => Ok(BandwidthType::Ct),
+            "RR" => Ok(BandwidthType::Rr),
+            "RS" => Ok(BandwidthType::Rs),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
         }
     }
 }
@@ -308,20 +295,14 @@ impl FromStr for MediaType {
     type Err = ParseEnumError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if "audio".eq_ignore_ascii_case(s) {
-            Ok(MediaType::Audio)
-        } else if "video".eq_ignore_ascii_case(s) {
-            Ok(MediaType::Video)
-        } else if "text".eq_ignore_ascii_case(s) {
-            Ok(MediaType::Text)
-        } else if "application".eq_ignore_ascii_case(s) {
-            Ok(MediaType::Application)
-        } else if "message".eq_ignore_ascii_case(s) {
-            Ok(MediaType::Message)
-        } else if "image".eq_ignore_ascii_case(s) {
-            Ok(MediaType::Image)
-        } else {
-            Err(ParseEnumError::Invalid(s.to_string()))
+        match s {
+            "audio" => Ok(MediaType::Audio),
+            "video" => Ok(MediaType::Video),
+            "text" => Ok(MediaType::Text),
+            "application" => Ok(MediaType::Application),
+            "message" => Ok(MediaType::Message),
+            "image" => Ok(MediaType::Image),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
         }
     }
 }
@@ -365,8 +346,8 @@ pub enum TransportProto {
 impl TransportProto {
     pub fn as_str(&self) -> &str {
         match self {
-            // The strings are case-insensitive, but the spec (RFC 8866) uses lower-case of the "udp" protocol
-            // and upper-case for the others so keeping it the same
+            // The spec (RFC 8866, section 5.14) uses lower-case for the "udp"
+            // protocol and upper-case for the others
             TransportProto::Udp => "udp",
             TransportProto::RtpAvp => "RTP/AVP",
             TransportProto::RtpAvpf => "RTP/AVPF",
@@ -417,35 +398,21 @@ impl FromStr for TransportProto {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // The strings are case-insensitive, but the spec (RFC 8866) uses lower-case of the "udp" protocol
-        // and upper-case for the others so keeping it the same
-        if "udp".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::Udp)
-        } else if "RTP/AVP".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::RtpAvp)
-        } else if "RTP/AVPF".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::RtpAvpf)
-        } else if "RTP/SAVP".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::RtpSavp)
-        } else if "RTP/SAVPF".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::RtpSavpf)
-        } else if "TCP/DTLS/RTP/SAVP".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::TcpDtlsRtpSavp)
-        } else if "TCP/DTLS/RTP/SAVPF".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::TcpDtlsRtpSavpf)
-        } else if "UDP/TLS/RTP/SAVP".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::UdpTlsRtpSavp)
-        } else if "UDP/TLS/RTP/SAVPF".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::UdpTlsRtpSavpf)
-        } else if "UDP/DTLS/SCTP".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::UdpDtlsSctp)
-        } else if "TCP/DTLS/SCTP".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::TcpDtlsSctp)
-        } else if "DTLS/SCTP".eq_ignore_ascii_case(s) {
-            Ok(TransportProto::DtlsSctp)
-        } else {
-            Ok(TransportProto::Other(s.to_string()))
-        }
+        Ok(match s {
+            "udp" => TransportProto::Udp,
+            "RTP/AVP" => TransportProto::RtpAvp,
+            "RTP/AVPF" => TransportProto::RtpAvpf,
+            "RTP/SAVP" => TransportProto::RtpSavp,
+            "RTP/SAVPF" => TransportProto::RtpSavpf,
+            "TCP/DTLS/RTP/SAVP" => TransportProto::TcpDtlsRtpSavp,
+            "TCP/DTLS/RTP/SAVPF" => TransportProto::TcpDtlsRtpSavpf,
+            "UDP/TLS/RTP/SAVP" => TransportProto::UdpTlsRtpSavp,
+            "UDP/TLS/RTP/SAVPF" => TransportProto::UdpTlsRtpSavpf,
+            "UDP/DTLS/SCTP" => TransportProto::UdpDtlsSctp,
+            "TCP/DTLS/SCTP" => TransportProto::TcpDtlsSctp,
+            "DTLS/SCTP" => TransportProto::DtlsSctp,
+            other => TransportProto::Other(other.to_string()),
+        })
     }
 }
 
@@ -486,14 +453,10 @@ impl FromStr for RidDirection {
     type Err = ParseEnumError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // The grammar (RFC 8851, section 10) is case-sensitive; parsing is
-        // case-insensitive like everywhere else in this crate.
-        if s.eq_ignore_ascii_case("send") {
-            Ok(RidDirection::Send)
-        } else if s.eq_ignore_ascii_case("recv") {
-            Ok(RidDirection::Recv)
-        } else {
-            Err(ParseEnumError::Invalid(s.to_string()))
+        match s {
+            "send" => Ok(RidDirection::Send),
+            "recv" => Ok(RidDirection::Recv),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
         }
     }
 }

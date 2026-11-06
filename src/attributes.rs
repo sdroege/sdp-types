@@ -2833,14 +2833,11 @@ impl FromStr for SourceFilterAddrType {
     type Err = ParseEnumError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "*" {
-            Ok(SourceFilterAddrType::Any)
-        } else if "IP4".eq_ignore_ascii_case(s) {
-            Ok(SourceFilterAddrType::Ip4)
-        } else if "IP6".eq_ignore_ascii_case(s) {
-            Ok(SourceFilterAddrType::Ip6)
-        } else {
-            Err(ParseEnumError::Invalid(s.to_string()))
+        match s {
+            "*" => Ok(SourceFilterAddrType::Any),
+            "IP4" => Ok(SourceFilterAddrType::Ip4),
+            "IP6" => Ok(SourceFilterAddrType::Ip6),
+            _ => Err(ParseEnumError::Invalid(s.to_string())),
         }
     }
 }
@@ -4540,11 +4537,13 @@ a=rtcp:53020\r
             Rid::with_params("2", RidDirection::Send, ["max-width"])
         );
 
-        // Trailing separators are tolerated, direction is case-insensitive.
+        // Trailing separators are tolerated, the direction is case-sensitive
+        // (RFC 8851, section 10).
         assert_eq!(
-            "2 SEND pt=99;".parse::<Rid>().unwrap(),
+            "2 send pt=99;".parse::<Rid>().unwrap(),
             Rid::with_params("2", RidDirection::Send, ["pt=99"])
         );
+        assert!("2 SEND pt=99;".parse::<Rid>().is_err());
 
         for invalid in [
             "",
@@ -4720,10 +4719,14 @@ a=rtcp:53020\r
             "incl IN * channel-1.example.com src-1.example.com"
         );
 
-        // Filter mode and address type matching is case-insensitive.
-        let filter: SourceFilter = "EXCL IN ip6 ff0e::11a 2001:db8::1".parse().unwrap();
+        // The filter mode is case-insensitive (RFC 4570, appendix A), the
+        // address type is the SDP addrtype token and case-sensitive.
+        let filter: SourceFilter = "EXCL IN IP6 ff0e::11a 2001:db8::1".parse().unwrap();
         assert_eq!(filter.mode, SourceFilterMode::Excl);
         assert_eq!(filter.addrtype, SourceFilterAddrType::Ip6);
+        assert!("excl IN ip6 ff0e::11a 2001:db8::1"
+            .parse::<SourceFilter>()
+            .is_err());
 
         for invalid in [
             "",

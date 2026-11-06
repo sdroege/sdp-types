@@ -22,8 +22,14 @@ specifically the [variant used by Rust](http://doc.crates.io/manifest.html#the-v
   that only matches a registered one ignoring case is not registered itself
   and must be ignored (section 5.13). This also matches libwebrtc,
   libgstsdp, pion/sdp and the webrtc-rs sdp crate.
-  This is a breaking change: lookups no longer find attributes whose name
-  only matches ignoring case.
+- The `nettype` (`NetType`), `addrtype` (`AddrType`), bandwidth type
+  (`BandwidthType`), media type (`MediaType`), transport protocol
+  (`TransportProto`), `a=rid` direction (`RidDirection`) and
+  `a=source-filter` address type (`SourceFilterAddrType`) tokens are matched
+  case-sensitively now. Per RFC 8866 (section 5) these fields are
+  case-significant, and RFC 8851 (section 10) defines the `a=rid` direction
+  as case-sensitive. This also matches libwebrtc, libgstsdp, pion/sdp and
+  the webrtc-rs sdp crate.
 
 ### Fixed
 - `a=group` without identification tags is accepted (RFC 5888, section 5).
